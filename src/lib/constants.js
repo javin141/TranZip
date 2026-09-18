@@ -7,7 +7,7 @@
 export const DEFAULT_TOLERANCE_PERCENT = 10;
 
 export const TOLERANCE_OPTIONS = [
-  { value: 0, label: 'Strict (0%)', hint: 'Only the fastest route is ever recommended.' },
+  { value: 5, label: 'Strict (5%)', hint: 'Routes up to 5% slower may be recommended if they are emptier.' },
   { value: 10, label: 'Balanced (10%)', hint: 'Routes up to 10% slower may be recommended if they are emptier.' },
   { value: 20, label: 'Comfort first (20%)', hint: 'Willing to travel up to 20% longer for a quieter ride.' },
 ];

@@ -264,7 +264,7 @@ export function App() {
               <h2>Plan a load-aware journey</h2>
               <ol className="empty__steps">
                 <li><strong>Pick two places.</strong> Search any address, postal code or MRT station, use your location, or click the map to drop pins.</li>
-                <li><strong>Choose your trade-off.</strong> Strict keeps only the fastest route; Comfort accepts slower, emptier rides.</li>
+                <li><strong>Choose your trade-off.</strong> Strict accepts routes within 5% of the fastest; Comfort accepts slower, emptier rides.</li>
                 <li><strong>Plan.</strong> TranZip checks live bus and MRT passenger load and recommends the least crowded route within your time tolerance.</li>
               </ol>
               <button type="button" className="empty__try" onClick={runExample}>
