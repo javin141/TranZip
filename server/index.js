@@ -20,6 +20,7 @@ import { systemRouter } from './routes/system.js';
 import { cacheStats } from './lib/cache.js';
 import { catalogSummary, loadStationCatalog } from './lib/stationCatalog.js';
 import { getBusServicesMap, getBusStopsMap } from './lib/ltaClient.js';
+import { hasGoogleRoutesKey } from './lib/googleRoutesClient.js';
 import { hasOneMapToken } from './lib/oneMapClient.js';
 import { RAIL_LINES } from './lib/railLines.js';
 
@@ -39,6 +40,7 @@ app.get('/api/meta', async (_req, res) => {
     app: { name: 'TranZip', city: 'Singapore' },
     integrations: {
       ...integrationStatus(),
+      googleRoutesLive: hasGoogleRoutesKey(),
       oneMapTokenLive: hasOneMapToken(),
     },
     oneMap: {
@@ -141,6 +143,7 @@ if (!process.env.VERCEL) {
   app.listen(config.port, async () => {
     const status = integrationStatus();
     console.log(`[startup] TranZip API listening on http://localhost:${config.port}`);
+    console.log(`[startup] Google Routes API key: ${status.google.configured ? 'configured' : 'MISSING (set GOOGLE_MAPS_API_KEY)'}`);
     console.log(`[startup] LTA DataMall key: ${status.lta.configured ? 'configured' : 'MISSING (set LTA_ACCOUNT_KEY)'}`);
     console.log(`[startup] OneMap token: ${status.oneMapToken.configured ? 'configured' : 'MISSING (set ONEMAP_TOKEN)'}`
       + `${status.oneMapToken.refreshable ? ' + auto-renew enabled' : ''}`);

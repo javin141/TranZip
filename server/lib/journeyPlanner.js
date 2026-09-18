@@ -17,8 +17,8 @@
  */
 
 import { getBusArrival, getBusServiceInfo, getCrowdRealTime, getCrowdForecast, getBusStop } from './ltaClient.js';
-import { planJourney, ROUTE_MODES } from './oneMapClient.js';
-import { planJourneysLocally, PLANNER_NAME } from './localPlanner.js';
+import { computeGoogleTransitRoutes, hasGoogleRoutesKey, GOOGLE_ROUTE_MODES } from './googleRoutesClient.js';
+import { UpstreamError } from './http.js';
 import { decodePolyline } from './polyline.js';
 import {
   LOAD_BANDS,
@@ -35,6 +35,7 @@ import { knownStationName, stationDetails } from './stationCatalog.js';
 import { formatStopName, stationLabel } from './format.js';
 
 export const DEFAULT_TOLERANCE = 0.1;
+export const ROUTE_MODES = GOOGLE_ROUTE_MODES;
 
 /** Classifies a OneMap leg into the vocabulary the UI and load model understand. */
 export function legType(leg) {
@@ -350,7 +351,7 @@ async function enrichRailLeg(leg, context) {
 }
 
 /** Enriches every in-vehicle leg with LTA load data (never throws). */
-async function enrichRoute(route, context) {
+export async function enrichRoute(route, context) {
   const inVehicle = route.legs.filter((leg) => leg.type === 'bus' || leg.type === 'mrt');
   await Promise.all(inVehicle.map((leg) => (
     leg.type === 'bus'
@@ -514,7 +515,6 @@ export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE } = {}) {
  * @param {number} [options.maxRoutes]             cap on returned route count
  * @param {boolean} [options.includeServiceInfo]   include bus operator/frequency details
  * @param {boolean} [options.includeStationInfo]   include interchange info per station
- * @param {'auto'|'onemap'|'lta'} [options.planner] force a routing source (debug/QA)
  */
 export async function planJourneyRoutes({
   origin,
@@ -525,99 +525,27 @@ export async function planJourneyRoutes({
   maxRoutes = 6,
   includeServiceInfo = true,
   includeStationInfo = true,
-  planner = 'auto',
 } = {}) {
+  if (!hasGoogleRoutesKey()) {
+    throw new UpstreamError(
+      'Google Maps API key is not configured. Please set GOOGLE_MAPS_API_KEY in .env.',
+      { service: 'Google Routes', kind: 'not_configured' },
+    );
+  }
+
   const nowMs = Date.now();
   const requested = [...new Set((modes || []).filter((mode) => ROUTE_MODES.includes(mode)))];
   const queryModes = requested.length > 0 ? requested : ['TRANSIT'];
 
   const warnings = [];
-  /** @type {Map<string, { itinerary: any, modes: Set<string> }>} */
-  const collected = new Map();
-  let routingSource = null;
-  /** @type {any} */
-  let analyzedLocal = null;
+  const routes = await computeGoogleTransitRoutes({
+    origin,
+    destination,
+    dateTime,
+    modes: queryModes,
+  });
 
-  if (planner !== 'lta') {
-    const settled = await Promise.allSettled(
-      queryModes.map((mode) => planJourney({
-        start: origin,
-        end: destination,
-        mode,
-        dateTime,
-        numItineraries: 3,
-      })),
-    );
-
-    settled.forEach((result, index) => {
-      const mode = queryModes[index];
-      if (result.status === 'rejected') {
-        warnings.push({ mode, message: result.reason?.message || 'Routing request failed.' });
-        return;
-      }
-      for (const itinerary of result.value?.plan?.itineraries || []) {
-        const signature = itinerarySignature(itinerary);
-        if (!signature || signature === 'walk-only') continue;
-        const existing = collected.get(signature);
-        if (existing) existing.modes.add(mode);
-        else collected.set(signature, { itinerary, modes: new Set([mode]) });
-      }
-    });
-
-    if (collected.size > 0) routingSource = 'onemap';
-  }
-
-  const context = {
-    nowMs,
-    departureMs: dateTime.getTime(),
-    // Plans more than 15 minutes ahead use the 30-minute crowd forecast;
-    // sooner departures use LTA's live 10-minute crowd reading.
-    useForecast: dateTime.getTime() - nowMs > 15 * 60 * 1000,
-    includeServiceInfo,
-    includeStationInfo,
-  };
-
-  /** @type {any[]} */
-  let summarized = [];
-
-  if (routingSource === 'onemap') {
-    summarized = [...collected.values()]
-      .sort((a, b) => (a.itinerary.duration || 0) - (b.itinerary.duration || 0))
-      .slice(0, maxRoutes)
-      .map((entry, index) => {
-        const route = summarizeItinerary(entry.itinerary, index, { origin, destination });
-        route.queryModes = [...entry.modes];
-        route.source = 'onemap';
-        route.planner = 'OneMap routing (OTP)';
-        return route;
-      });
-  } else {
-    // OneMap routing is unavailable (or was skipped): fall back to the LTA
-    // DataMall-native planner so the app keeps working, and say so in the API.
-    if (planner === 'onemap') {
-      warnings.push({ mode: 'onemap', message: 'OneMap routing was requested but returned no itineraries.' });
-    }
-    const local = await planJourneysLocally({
-      origin,
-      destination,
-      dateTime,
-      modes: queryModes,
-      maxRoutes: Math.max(maxRoutes, 6),
-    });
-    analyzedLocal = local;
-    summarized = local.routes;
-    warnings.push(...local.warnings);
-    if (summarized.length > 0) {
-      routingSource = 'lta';
-      warnings.push({
-        mode: 'info',
-        message: 'OneMap routing is not enabled for this token, so journeys were planned with LTA DataMall '
-          + 'bus routes and the MRT network (times are estimates).',
-      });
-    }
-  }
-
-  if (summarized.length === 0) {
+  if (routes.length === 0) {
     return {
       generatedAt: new Date().toISOString(),
       departureTime: dateTime.toISOString(),
@@ -628,14 +556,23 @@ export async function planJourneyRoutes({
       routingSource: null,
       routeCount: 0,
       recommendation: null,
-      warnings: warnings.length > 0 ? warnings : [{ mode: 'info', message: 'No routes found for this trip.' }],
+      warnings: [{ mode: 'info', message: 'No routes found for this trip.' }],
       routes: [],
     };
   }
 
-  await Promise.all(summarized.map((route) => enrichRoute(route, context)));
+  const context = {
+    nowMs,
+    departureMs: dateTime.getTime(),
+    useForecast: dateTime.getTime() - nowMs > 15 * 60 * 1000,
+    includeServiceInfo,
+    includeStationInfo,
+  };
 
-  const { routes, recommendation } = rankRoutes(summarized, { tolerance });
+  const cappedRoutes = routes.slice(0, maxRoutes);
+  await Promise.all(cappedRoutes.map((route) => enrichRoute(route, context)));
+
+  const { routes: rankedRoutes, recommendation } = rankRoutes(cappedRoutes, { tolerance });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -644,12 +581,11 @@ export async function planJourneyRoutes({
     destination,
     tolerancePercent: Math.round(tolerance * 100),
     queryModes,
-    routingSource,
-    planner: routingSource === 'lta' ? PLANNER_NAME : 'OneMap routing (OTP)',
-    localPlannerStats: routingSource === 'lta' ? analyzedLocal?.stats || null : null,
-    routeCount: routes.length,
+    routingSource: 'google',
+    planner: 'Google Maps Transit Route API',
+    routeCount: rankedRoutes.length,
     recommendation,
     warnings,
-    routes,
+    routes: rankedRoutes,
   };
 }

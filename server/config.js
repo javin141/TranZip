@@ -12,6 +12,10 @@ export const config = {
     accountKey: (process.env.LTA_ACCOUNT_KEY || '').trim(),
     pageSize: 500,
   },
+  google: {
+    baseUrl: 'https://routes.googleapis.com',
+    apiKey: (process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY || process.env.GOOGLE_API_KEY || '').trim(),
+  },
   oneMap: {
     baseUrl: 'https://www.onemap.gov.sg/api',
     token: (process.env.ONEMAP_TOKEN || '').trim(),
@@ -34,8 +38,18 @@ export const config = {
 };
 
 export function integrationStatus() {
+  const isGoogleKeyConfigured = Boolean(
+    config.google.apiKey
+    && config.google.apiKey !== 'YOUR_API_KEY'
+    && config.google.apiKey !== 'YOUR_GOOGLE_MAPS_API_KEY',
+  );
+
   return {
     lta: { configured: Boolean(config.lta.accountKey), label: 'LTA DataMall' },
+    google: {
+      configured: isGoogleKeyConfigured,
+      label: 'Google Routes',
+    },
     oneMapToken: {
       configured: Boolean(config.oneMap.token),
       refreshable: Boolean(config.oneMap.email && config.oneMap.password),
