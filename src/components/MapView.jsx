@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { BASEMAP_STYLES, LEG_COLOURS, ONEMAP_ATTRIBUTION } from '../lib/constants.js';
+import { BASEMAP_STYLES, LEG_COLOURS, ONEMAP_ATTRIBUTION, lineSwatchColour } from '../lib/constants.js';
 import { classNames, legLabel } from '../lib/format.js';
 
 const SINGAPORE_CENTER = [1.3521, 103.8198];
@@ -104,7 +104,7 @@ export function MapView({
 
       const isActive = leg.id === activeLegId;
       const line = L.polyline(points, {
-        color: LEG_COLOURS[leg.type] || LEG_COLOURS.other,
+        color: leg.type === 'mrt' ? lineSwatchColour(leg.line) : (LEG_COLOURS[leg.type] || LEG_COLOURS.other),
         weight: isActive ? 9 : 5,
         opacity: activeLegId && !isActive ? 0.35 : 0.9,
         dashArray: leg.type === 'walk' ? '2 7' : undefined,

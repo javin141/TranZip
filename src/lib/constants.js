@@ -42,23 +42,72 @@ export const BASEMAP_STYLES = [
 
 export const ONEMAP_ATTRIBUTION = '&copy; <a href="https://www.onemap.gov.sg" target="_blank" rel="noreferrer">OneMap</a> &copy; Singapore Land Authority';
 
-/** Palette shared by load badges, station bars and the map. */
+/**
+ * Palette shared by load badges, station bars and the map. Keyed by the
+ * `tone` field LOAD_BANDS actually carries (server/lib/loadModel.js:
+ * good/moderate/busy/unknown) - a prior version of this table was keyed by
+ * band name instead (seats/standing/limited), which silently never matched
+ * and left every crowd indicator rendering as "unknown" grey.
+ */
 export const LOAD_TONES = {
-  seats: { colour: '#22c55e', soft: 'rgba(34, 197, 94, 0.16)' },
-  standing: { colour: '#f59e0b', soft: 'rgba(245, 158, 11, 0.18)' },
-  limited: { colour: '#ef4444', soft: 'rgba(239, 68, 68, 0.18)' },
-  unknown: { colour: '#94a3b8', soft: 'rgba(148, 163, 184, 0.16)' },
+  good: { colour: '#188038', soft: '#e6f4ea' },
+  moderate: { colour: '#b06000', soft: '#fef7e0' },
+  busy: { colour: '#c5221f', soft: '#fce8e6' },
+  unknown: { colour: '#80868b', soft: '#f1f3f4' },
 };
 
 export function toneForBand(band) {
   return LOAD_TONES[band?.tone] || LOAD_TONES.unknown;
 }
 
-/** Colour for the line/leg polyline drawn on the map. */
+/** Colour for the leg polyline drawn on the map, by mode (walk/bus/other). */
 export const LEG_COLOURS = {
-  mrt: '#2563eb',
-  bus: '#0891b2',
-  walk: '#94a3b8',
-  other: '#7c3aed',
-  recommended: '#f97316',
+  mrt: '#1a73e8',
+  bus: '#188038',
+  walk: '#64b5f6',
+  other: '#8430ce',
+  recommended: '#1a73e8',
 };
+
+/**
+ * Official Singapore MRT/LRT line colours - mirrors server/lib/railLines.js
+ * so a line reads the same colour here as it does on the physical map and
+ * wayfinding signage (NSL red, EWL green, NEL purple, CCL orange, DTL blue,
+ * TEL brown, the LRT lines grey, JRL teal).
+ */
+export const RAIL_LINE_COLOURS = {
+  NSL: '#d42e12',
+  EWL: '#009645',
+  CGL: '#009645',
+  NEL: '#9900aa',
+  CCL: '#fa9e0d',
+  CEL: '#fa9e0d',
+  DTL: '#005ec4',
+  TEL: '#9d5b25',
+  BPL: '#7c8087',
+  SLRT: '#7c8087',
+  PLRT: '#7c8087',
+  JRL: '#0099aa',
+};
+
+/**
+ * Same palette, but with the Circle/Marina Bay Line's brand orange darkened
+ * for use as actual text - #fa9e0d is only ~2:1 contrast on white, well
+ * under the ~4.5:1 needed to read reliably. Every other line's brand colour
+ * is already dark enough on its own.
+ */
+const RAIL_LINE_TEXT_COLOURS = {
+  ...RAIL_LINE_COLOURS,
+  CCL: '#a15d00',
+  CEL: '#a15d00',
+};
+
+/** True brand colour - for solid swatches (map polylines, marker dots/circles). */
+export function lineSwatchColour(lineCode) {
+  return RAIL_LINE_COLOURS[String(lineCode || '').toUpperCase()] || LEG_COLOURS.mrt;
+}
+
+/** Contrast-safe variant - for the colour actually used as text. */
+export function lineTextColour(lineCode) {
+  return RAIL_LINE_TEXT_COLOURS[String(lineCode || '').toUpperCase()] || LEG_COLOURS.mrt;
+}

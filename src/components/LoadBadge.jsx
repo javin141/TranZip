@@ -1,4 +1,4 @@
-import { toneForBand } from '../lib/constants.js';
+import { LOAD_TONES, toneForBand } from '../lib/constants.js';
 import { classNames } from '../lib/format.js';
 
 /**
@@ -34,14 +34,18 @@ export function LoadMeter({ score, band, width = 64 }) {
 /** Legend explaining the three LTA load bands. */
 export function LoadScale({ compact = false }) {
   const bands = [
-    { tone: 'seats', label: 'Seats available', hint: 'SEA · plenty of room' },
-    { tone: 'standing', label: 'Standing available', hint: 'SDA · aisle space left' },
-    { tone: 'limited', label: 'Limited standing', hint: 'LSD · close to capacity' },
+    { tone: 'good', label: 'Seats available', hint: 'SEA · plenty of room' },
+    { tone: 'moderate', label: 'Standing available', hint: 'SDA · aisle space left' },
+    { tone: 'busy', label: 'Limited standing', hint: 'LSD · close to capacity' },
   ];
   return (
     <div className={classNames('load-scale', compact && 'load-scale--compact')}>
       {bands.map((band) => (
-        <span key={band.tone} className={`load-scale__item load-scale__item--${band.tone}`}>
+        <span
+          key={band.tone}
+          className={`load-scale__item load-scale__item--${band.tone}`}
+          style={{ '--tone': LOAD_TONES[band.tone].colour }}
+        >
           <span className="load-scale__swatch" aria-hidden="true" />
           <span>
             <strong>{band.label}</strong>
@@ -63,7 +67,7 @@ export function ArrivalPill({ arrival }) {
   return (
     <span
       className={classNames('arrival-pill', !arrival.monitored && 'arrival-pill--unmonitored')}
-      style={{ '--tone': tone.colour }}
+      style={{ '--tone': tone.colour, '--tone-soft': tone.soft }}
       title={arrival.monitored ? 'Live vehicle position reported by LTA' : 'Scheduled only - LTA is not tracking this vehicle'}
     >
       <strong>{arrival.minutesUntil === 0 ? 'Arr' : `${arrival.minutesUntil}′`}</strong>

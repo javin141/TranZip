@@ -99,10 +99,7 @@ export function PlannerForm({
         </div>
 
         <div className="control-group">
-          <span className="control-group__label">
-            Travel time allowance
-            <em title={selectedTolerance.hint}>?</em>
-          </span>
+          <span className="control-group__label">Travel time allowance</span>
           <div className="segmented">
             {TOLERANCE_OPTIONS.map((option) => (
               <button
@@ -110,12 +107,12 @@ export function PlannerForm({
                 type="button"
                 className={classNames('segmented__item', tolerance === option.value && 'is-active')}
                 onClick={() => onToleranceChange(option.value)}
-                title={option.hint}
               >
                 {option.label}
               </button>
             ))}
           </div>
+          <p className="control-group__hint">{selectedTolerance.hint}</p>
         </div>
 
         <div className="control-group control-group--modes">

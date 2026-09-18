@@ -1,4 +1,5 @@
 import { classNames, formatFare, formatMinutes, pluralise } from '../lib/format.js';
+import { lineSwatchColour, lineTextColour } from '../lib/constants.js';
 import { LoadBadge } from './LoadBadge.jsx';
 import { LegRow } from './LegTimeline.jsx';
 
@@ -11,8 +12,11 @@ function LegChip({ leg }) {
       : leg.type === 'walk'
         ? 'Walk'
         : leg.routeLabel || 'Ride';
+  const style = leg.type === 'mrt'
+    ? { '--tone': lineTextColour(leg.line), '--tone-swatch': lineSwatchColour(leg.line) }
+    : undefined;
   return (
-    <span className={classNames('leg-chip', `leg-chip--${leg.type}`)} title={`${leg.from?.name} → ${leg.to?.name}`}>
+    <span className={classNames('leg-chip', `leg-chip--${leg.type}`)} style={style} title={`${leg.from?.name} → ${leg.to?.name}`}>
       {label}
       {leg.type !== 'walk' && leg.load?.band && (
         <i className={classNames('leg-chip__dot', `leg-chip__dot--${leg.load.band.tone}`)} aria-hidden="true" />

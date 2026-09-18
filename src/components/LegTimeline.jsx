@@ -6,7 +6,7 @@ import {
   formatMinutes,
   legLabel,
 } from '../lib/format.js';
-import { LEG_COLOURS, toneForBand } from '../lib/constants.js';
+import { LEG_COLOURS, lineSwatchColour, toneForBand } from '../lib/constants.js';
 import { ArrivalPill, LoadBadge } from './LoadBadge.jsx';
 
 const LEG_ICONS = {
@@ -17,6 +17,7 @@ const LEG_ICONS = {
 };
 
 function legColour(leg) {
+  if (leg?.type === 'mrt') return lineSwatchColour(leg.line);
   return LEG_COLOURS[leg?.type] || LEG_COLOURS.other;
 }
 
