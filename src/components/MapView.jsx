@@ -5,7 +5,7 @@ import { BASEMAP_STYLES, LEG_COLOURS, ONEMAP_ATTRIBUTION, lineSwatchColour } fro
 import { classNames, legLabel } from '../lib/format.js';
 
 const SINGAPORE_CENTER = [1.3521, 103.8198];
-const TILE_URL = 'https://www.onemap.gov.sg/maps/tiles';
+const TILE_URL = 'https://tile.openstreetmap.org';
 
 function pinIcon(kind) {
   const glyph = kind === 'origin' ? '◉' : '◎';
@@ -82,7 +82,7 @@ export function MapView({
 
   // Switch basemap styles without recreating the map.
   useEffect(() => {
-    tileRef.current?.setUrl(`${TILE_URL}/${basemap}/{z}/{x}/{y}.png`);
+    tileRef.current?.setUrl(`${TILE_URL}/{z}/{x}/{y}.png`);
   }, [basemap]);
 
   // Draw the selected route: one polyline per leg, dots for the active leg's stops.

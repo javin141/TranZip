@@ -40,7 +40,7 @@ export const BASEMAP_STYLES = [
   { value: 'Original', label: 'Original', path: 'original' },
 ];
 
-export const ONEMAP_ATTRIBUTION = '&copy; <a href="https://www.onemap.gov.sg" target="_blank" rel="noreferrer">OneMap</a> &copy; Singapore Land Authority';
+export const ONEMAP_ATTRIBUTION = '© OpenStreetMap contributors';
 
 /**
  * Palette shared by load badges, station bars and the map. Keyed by the
