@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------ *
- * NebulaX Transit - application styles (dark "nebula" theme)
+ * TranZip - application styles (dark theme)
  * ------------------------------------------------------------------ */
 
 :root {
@@ -78,23 +78,19 @@ button {
 
 .app__brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   min-width: 0;
 }
 
-.app__logo {
-  width: 34px;
-  height: 34px;
+.app__logo-img {
+  width: 38px;
+  height: 38px;
   border-radius: 10px;
-  display: inline-grid;
-  place-items: center;
-  font-size: 17px;
-  color: #061018;
-  background: linear-gradient(135deg, var(--accent), #3ecf9a);
-  box-shadow: 0 6px 18px rgba(100, 224, 176, 0.35);
+  object-fit: cover;
   align-self: center;
   flex: none;
+  box-shadow: 0 6px 18px rgba(0, 212, 224, 0.3);
 }
 
 .app__title {

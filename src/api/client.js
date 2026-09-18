@@ -35,7 +35,7 @@ async function request(path, { method = 'GET', body, signal } = {}) {
     });
   } catch (error) {
     if (error.name === 'AbortError') throw error;
-    throw new ApiError('Cannot reach the NebulaX API server. Is `npm run dev` running?', { kind: 'network' });
+    throw new ApiError('Cannot reach the TranZip API server. Is `npm run dev` running?', { kind: 'network' });
   }
 
   const text = await response.text();

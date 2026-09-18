@@ -1,5 +1,5 @@
 /**
- * NebulaX Transit - API proxy server.
+ * TranZip - API proxy server.
  *
  * The browser never sees the LTA DataMall AccountKey or the OneMap token: the
  * React app talks to /api/* on this server, which adds the credentials, caches
@@ -36,7 +36,7 @@ app.use(express.json({ limit: '256kb' }));
 app.get('/api/meta', async (_req, res) => {
   const stations = await catalogSummary();
   res.json({
-    app: { name: 'NebulaX Transit', city: 'Singapore' },
+    app: { name: 'TranZip', city: 'Singapore' },
     integrations: {
       ...integrationStatus(),
       oneMapTokenLive: hasOneMapToken(),
@@ -140,7 +140,7 @@ async function warmCaches() {
 if (!process.env.VERCEL) {
   app.listen(config.port, async () => {
     const status = integrationStatus();
-    console.log(`[startup] NebulaX Transit API listening on http://localhost:${config.port}`);
+    console.log(`[startup] TranZip API listening on http://localhost:${config.port}`);
     console.log(`[startup] LTA DataMall key: ${status.lta.configured ? 'configured' : 'MISSING (set LTA_ACCOUNT_KEY)'}`);
     console.log(`[startup] OneMap token: ${status.oneMapToken.configured ? 'configured' : 'MISSING (set ONEMAP_TOKEN)'}`
       + `${status.oneMapToken.refreshable ? ' + auto-renew enabled' : ''}`);

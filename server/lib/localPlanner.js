@@ -35,7 +35,7 @@ import { busRouteStops, busStop, servicesAtStop, stopsNear } from './busNetwork.
 import { formatStopName } from './format.js';
 import { lineMeta } from './railLines.js';
 
-export const PLANNER_NAME = 'NebulaX planner';
+export const PLANNER_NAME = 'TranZip planner';
 
 const WALK_SPEED = 1.25; // m/s (~4.5 km/h)
 const WALK_OVERHEAD_MINUTES = 1;

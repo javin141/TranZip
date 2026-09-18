@@ -1,8 +1,8 @@
 {
-  "name": "nebulax-transit",
+  "name": "tranzip",
   "private": true,
   "version": "1.0.0",
-  "description": "NebulaX Transit - Singapore public transport journey planner with live bus and MRT passenger load, powered by LTA DataMall and OneMap.",
+  "description": "TranZip - Singapore public transport journey planner with live bus and MRT passenger load, powered by LTA DataMall and OneMap.",
   "type": "module",
   "engines": {
     "node": ">=18.17"

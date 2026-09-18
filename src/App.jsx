@@ -128,9 +128,9 @@ export function App() {
     <div className="app">
       <header className="app__header">
         <div className="app__brand">
-          <span className="app__logo" aria-hidden="true">▲</span>
+          <img src={new URL('./assets/logo.jpg', import.meta.url).href} alt="TranZip" className="app__logo-img" />
           <div>
-            <h1 className="app__title">NebulaX Transit</h1>
+            <h1 className="app__title">TranZip</h1>
             <p className="app__subtitle">Singapore journeys ranked by live passenger load</p>
           </div>
         </div>
@@ -265,7 +265,7 @@ export function App() {
               <ol className="empty__steps">
                 <li><strong>Pick two places.</strong> Search any address, postal code or MRT station, use your location, or click the map to drop pins.</li>
                 <li><strong>Choose your trade-off.</strong> Strict keeps only the fastest route; Comfort accepts slower, emptier rides.</li>
-                <li><strong>Plan.</strong> NebulaX checks live bus and MRT passenger load and recommends the least crowded route within your time tolerance.</li>
+                <li><strong>Plan.</strong> TranZip checks live bus and MRT passenger load and recommends the least crowded route within your time tolerance.</li>
               </ol>
               <button type="button" className="empty__try" onClick={runExample}>
                 Try an example: Bishan → Marina Bay
@@ -289,7 +289,6 @@ export function App() {
 
       <footer className="app__footer">
         <span>Data: LTA DataMall (bus &amp; MRT load) · OneMap (search, routing, basemap) · © Singapore Land Authority</span>
-        <span>Set your own keys in .env — they never reach the browser.</span>
       </footer>
     </div>
   );
