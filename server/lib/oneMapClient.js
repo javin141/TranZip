@@ -10,12 +10,18 @@ const CACHE = {
   routes: createCache('onemap:routes'),
 };
 
-/** OneMap denies requests with a valid-but-throttled token using a 403. */
-function explainForbidden(error) {
+/**
+ * OneMap answers 403 both for stale/expired tokens and for exhausted account
+ * quotas. Tokens can also stop working before their JWT `exp` (minting a new
+ * token invalidates the previously issued ones), so a token that still "looks"
+ * valid may already be rejected server-side.
+ */
+function explainForbidden(error, { refreshed = false } = {}) {
   if (error instanceof UpstreamError && error.status === 403) {
     return new UpstreamError(
       'OneMap returned HTTP 403. The access token may have expired or the account quota is '
-      + 'exhausted - requests are throttled, cached and retried automatically.',
+      + 'exhausted - requests are throttled, cached and retried automatically.'
+      + (refreshed ? ' A freshly minted token was refused as well.' : ''),
       {
         service: 'OneMap',
         status: 403,
@@ -30,18 +36,39 @@ function explainForbidden(error) {
 
 export function hasOneMapToken() {
   const token = config.oneMap.token;
-  if (!token) return false;
-  const expiry = decodeJwtExpiry(token);
-  return !expiry || expiry > Date.now();
+  const expiry = token ? decodeJwtExpiry(token) : null;
+  if (token && (!expiry || expiry > Date.now())) return true;
+  // Auto-renewal counts as usable: the server can mint a token on demand.
+  return Boolean(config.oneMap.email && config.oneMap.password);
 }
 
-async function currentToken() {
-  const configured = config.oneMap.token;
-  const expiry = configured ? decodeJwtExpiry(configured) : null;
-  if (configured && (!expiry || expiry - Date.now() > 60_000)) return configured;
+const TOKEN_CACHE_KEY = 'access-token';
+
+/**
+ * Resolves the bearer token for OneMap API calls.
+ *
+ * The configured `ONEMAP_TOKEN` is only a bootstrap: OneMap retires tokens
+ * before their JWT `exp` (a fresh login invalidates older sessions), so when
+ * ONEMAP_EMAIL + ONEMAP_PASSWORD are set the server mints its own tokens and
+ * caches them in-process.
+ *
+ * @param {{ forceRefresh?: boolean }} [options] drop the cached token and mint
+ *   a fresh one, skipping the configured token entirely.
+ */
+async function currentToken({ forceRefresh = false } = {}) {
+  if (forceRefresh) CACHE.token.delete(TOKEN_CACHE_KEY);
+
+  if (!forceRefresh) {
+    const cached = CACHE.token.get(TOKEN_CACHE_KEY);
+    if (cached) return cached;
+    const configured = config.oneMap.token;
+    const expiry = configured ? decodeJwtExpiry(configured) : null;
+    if (configured && (!expiry || expiry - Date.now() > 60_000)) return configured;
+  }
 
   if (!config.oneMap.email || !config.oneMap.password) {
-    if (configured) return configured; // trust it even when `exp` cannot be read
+    const configured = config.oneMap.token;
+    if (configured && !forceRefresh) return configured; // trust it even when `exp` cannot be read
     throw new UpstreamError(
       'No usable OneMap token. Set ONEMAP_TOKEN (plus ONEMAP_EMAIL and ONEMAP_PASSWORD for '
       + 'automatic renewal) in .env.',
@@ -51,51 +78,77 @@ async function currentToken() {
 
   return memoize({
     cache: CACHE.token,
-    key: 'access-token',
+    key: TOKEN_CACHE_KEY,
     ttlMs: 23 * 60 * 60 * 1000,
     loader: async () => {
       const url = buildUrl(config.oneMap.baseUrl, '/auth/post/getToken');
+      // OneMap expects a JSON body here; the old urlencoded form now gets 404.
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
           email: config.oneMap.email,
           password: config.oneMap.password,
         }),
       });
       const text = await res.text();
-      if (!res.ok) {
+      let json = {};
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Non-JSON error body - handled by the !res.ok / !token checks below.
+      }
+      const minted = json.access_token || json.token || '';
+      if (!res.ok || !minted) {
         throw new UpstreamError(`OneMap token refresh failed (${res.status})`, {
           service: 'OneMap', status: res.status, url, body: text, kind: 'auth',
         });
       }
-      const json = JSON.parse(text);
-      return json.access_token || json.token || '';
+      return minted;
     },
   });
 }
 
 /**
  * GET against the OneMap REST API with bearer auth (required by /api/public/*).
- * Token expiry and quota failures are normalised into UpstreamError.
+ *
+ * Stale-token and quota failures are normalised into UpstreamError. When an
+ * authenticated call is refused with 403 and refresh credentials are set, the
+ * token is re-minted once and the request retried - OneMap rejects tokens that
+ * are still inside their JWT lifetime whenever a newer token was minted.
  */
 export async function oneMapGet(path, params = {}, { authenticated = true, timeoutMs } = {}) {
   const url = buildUrl(config.oneMap.baseUrl, path, params);
-  /** @type {Record<string,string>} */
-  const headers = { Accept: 'application/json' };
-  if (authenticated) {
-    const token = await currentToken();
-    headers.Authorization = /^Bearer\s/i.test(token) ? token : `Bearer ${token}`;
-  }
-  try {
-    return await requestJson(url, {
+  const attempt = (token) => {
+    /** @type {Record<string,string>} */
+    const headers = { Accept: 'application/json' };
+    if (authenticated) {
+      headers.Authorization = /^Bearer\s/i.test(token) ? token : `Bearer ${token}`;
+    }
+    return requestJson(url, {
       service: 'OneMap',
       headers,
       timeoutMs: timeoutMs ?? config.requestTimeoutMs,
       backoffMs: [1200, 3000],
     });
+  };
+
+  const token = authenticated ? await currentToken() : '';
+
+  try {
+    return await attempt(token);
   } catch (error) {
-    throw explainForbidden(error);
+    const forbidden = error instanceof UpstreamError && error.status === 403;
+    const canRefresh = authenticated && Boolean(config.oneMap.email && config.oneMap.password);
+    if (!forbidden || !canRefresh) throw explainForbidden(error);
+
+    const fresh = await currentToken({ forceRefresh: true });
+    if (fresh === token) throw explainForbidden(error); // genuinely quota-limited
+    try {
+      return await attempt(fresh);
+    } catch (retryError) {
+      throw explainForbidden(retryError, { refreshed: true });
+    }
   }
 }
 /** Fuzzy place / address / postal-code lookup used by both search boxes. */
