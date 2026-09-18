@@ -131,7 +131,7 @@ export function App() {
           <img src={new URL('./assets/logo.jpg', import.meta.url).href} alt="TranZip" className="app__logo-img" />
           <div>
             <h1 className="app__title">TranZip</h1>
-            <p className="app__subtitle">Singapore journeys ranked by live passenger load</p>
+            <p className="app__subtitle">Singapore Journey Planner with Live Load</p>
           </div>
         </div>
         <div className="app__status">
