@@ -20,9 +20,9 @@ function pinIcon(kind) {
 
 /**
  * OneMap basemap with the selected route drawn leg by leg. Bus legs are cyan,
- * MRT legs blue, walks a dashed grey; the active leg (hovered in the timeline)
- * is drawn thicker and its stops get dots. Clicking the map reports the point
- * back to the app so it can fill the origin or destination.
+ * MRT legs blue, walks a dashed grey; the active leg (clicked in the timeline
+ * or on the map) is drawn thicker and its stops get dots. Clicking the map
+ * reports the point back to the app so it can fill the origin or destination.
  */
 export function MapView({
   origin,
@@ -112,7 +112,6 @@ export function MapView({
         lineJoin: 'round',
       });
       line.bindTooltip(legLabel(leg), { sticky: true, className: 'map-tooltip' });
-      line.on('mouseover', () => hoverRef.current?.(leg.id));
       line.on('click', () => hoverRef.current?.(leg.id));
       line.addTo(layer);
       for (const point of points) bounds.push(point);

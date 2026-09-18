@@ -281,13 +281,19 @@ export async function interchangeWith(code) {
  * Dijkstra over station codes with a transfer penalty, so the result is the
  * fastest journey rather than the fewest-stops path.
  *
+ * @param {Set<string>} [options.avoidStations] Station codes to route around
+ *   (e.g. from a live LTA service alert). A station in this set is treated as
+ *   unreachable by rail - the path detours via another line/interchange when
+ *   one exists, or the search fails when it doesn't (which correctly pushes
+ *   the caller toward a bus alternative instead of riding through the fault).
  * @returns {Promise<{ stations: { code: string, line: string }[], minutes: number, transfers: number }|null>}
  */
-export async function findRailPath(fromCode, toCode, { includeLrt = true } = {}) {
+export async function findRailPath(fromCode, toCode, { includeLrt = true, avoidStations = null } = {}) {
   const network = await railNetwork();
   const start = String(fromCode || '').toUpperCase();
   const goal = String(toCode || '').toUpperCase();
   if (!network.stations.has(start) || !network.stations.has(goal)) return null;
+  if (avoidStations && (avoidStations.has(start) || avoidStations.has(goal))) return null;
   if (start === goal) {
     return { stations: [{ code: start, line: lineForStationCode(start) }], minutes: 0, transfers: 0 };
   }
@@ -307,6 +313,7 @@ export async function findRailPath(fromCode, toCode, { includeLrt = true } = {})
 
     for (const edge of network.adjacency.get(current.code) || []) {
       if (!includeLrt && isLrt(edge.line)) continue;
+      if (avoidStations && avoidStations.has(edge.to)) continue;
       const transferCost = current.line && current.line !== edge.line ? TRANSFER_PENALTY_MINUTES : 0;
       const minutes = current.minutes + edge.minutes + transferCost;
       if (minutes >= (best.get(edge.to) ?? Infinity)) continue;

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { cacheStats } from '../lib/cache.js';
 import { catalogSummary } from '../lib/stationCatalog.js';
 import { hasOneMapToken } from '../lib/oneMapClient.js';
+import { hasGoogleRoutesKey } from '../lib/googleRoutesClient.js';
 import { config, integrationStatus } from '../config.js';
 import { CROWD_API_LINES, RAIL_LINES } from '../lib/railLines.js';
 import { LOAD_BANDS } from '../lib/loadModel.js';
@@ -32,14 +33,21 @@ systemRouter.get('/health', async (_req, res) => {
           ? 'Bus arrival load and MRT platform crowd APIs are enabled.'
           : 'Set LTA_ACCOUNT_KEY in .env to enable bus and MRT load data.',
       },
+      google: {
+        ...status.google,
+        note: status.google.configured
+          ? 'Used for transit journey route planning.'
+          : 'Set GOOGLE_MAPS_API_KEY in .env to enable Google Maps Transit Route API.',
+      },
       oneMap: {
         ...status.oneMapToken,
         note: status.oneMapToken.configured || status.oneMapToken.refreshable
-          ? 'Used for place search, routing and reverse geocoding.'
-          : 'Set ONEMAP_TOKEN (or ONEMAP_EMAIL + ONEMAP_PASSWORD) in .env to enable routing.',
+          ? 'Used for place search and reverse geocoding.'
+          : 'Set ONEMAP_TOKEN (or ONEMAP_EMAIL + ONEMAP_PASSWORD) in .env for place search.',
       },
     },
     integrationsLive: {
+      googleRoutesLive: hasGoogleRoutesKey(),
       oneMapTokenUsable: hasOneMapToken(),
       ltaConfigured: Boolean(config.lta.accountKey),
     },

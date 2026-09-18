@@ -1,14 +1,15 @@
 /**
- * Journey planner: turns raw OneMap/OTP itineraries plus live LTA load data
- * into ranked, comparable routes and picks the recommended one.
+ * Journey planner: turns raw routing-provider itineraries plus live LTA load
+ * data into ranked, comparable routes and picks the recommended one.
  *
- * Two routing sources are supported:
- *   1. OneMap's public transport routing service (preferred, when the token is
+ * Three routing sources are tried in order, each falling through to the next:
+ *   1. Google Maps Routes API (preferred, when GOOGLE_MAPS_API_KEY is set).
+ *   2. OneMap's public transport routing service (when the token is
  *      provisioned for `/api/public/routingsvc/route`).
- *   2. A LTA DataMall-native planner (`localPlanner.js`) that builds journeys
- *      from `/BusRoutes` + the rail topology when OneMap routing is refused.
+ *   3. A LTA DataMall-native planner (`localPlanner.js`) that builds journeys
+ *      from `/BusRoutes` + the rail topology - the always-available fallback.
  *
- * Both sources produce the same route shape, so load enrichment and the
+ * All three produce the same route shape, so load enrichment and the
  * recommendation rule below apply identically.
  *
  * Recommendation rule (as specified):
@@ -18,7 +19,9 @@
 
 import { getBusArrival, getBusServiceInfo, getCrowdRealTime, getCrowdForecast, getBusStop } from './ltaClient.js';
 import { planJourney, ROUTE_MODES } from './oneMapClient.js';
+import { computeGoogleTransitRoutes, hasGoogleRoutesKey } from './googleRoutesClient.js';
 import { planJourneysLocally, PLANNER_NAME } from './localPlanner.js';
+import { getServiceDisruption, disruptionSummary, disruptionNoteForLine } from './disruptions.js';
 import { decodePolyline } from './polyline.js';
 import {
   LOAD_BANDS,
@@ -39,11 +42,11 @@ export const DEFAULT_TOLERANCE = 0.1;
 /** Classifies a OneMap leg into the vocabulary the UI and load model understand. */
 export function legType(leg) {
   const mode = String(leg?.mode || '').toUpperCase();
+  if (mode === 'WALK') return 'walk';
   const fromCode = leg?.from?.stopCode;
   if (isStationCode(fromCode) || isStationCode(leg?.to?.stopCode)) return 'mrt';
   if (mode === 'BUS' || mode === 'COACH') return 'bus';
   if (mode === 'SUBWAY' || mode === 'RAIL' || mode === 'TRAM') return 'mrt';
-  if (mode === 'WALK') return 'walk';
   return 'other';
 }
 
@@ -349,6 +352,42 @@ async function enrichRailLeg(leg, context) {
   return leg.load;
 }
 
+/* ------------------------------------------------------------------ *
+ * Live service disruptions
+ * ------------------------------------------------------------------ */
+
+function legStationCodes(leg) {
+  if (leg.type !== 'mrt') return [];
+  return [leg.from?.code, ...(leg.intermediateStops || []).map((stop) => stop.code), leg.to?.code].filter(Boolean);
+}
+
+/**
+ * Flags any rail leg that still has to pass through a station named in a live
+ * `/TrainServiceAlerts` segment. The pathfinder already tries to route around
+ * an active disruption (see `disruption.stationCodes` passed to the local
+ * planner), so a flagged leg here means no rail alternative existed - the
+ * leg is real and the flag is what lets the UI and the recommendation rule
+ * warn about it instead of silently riding through the fault.
+ */
+function applyDisruption(route, disruption) {
+  if (!disruption?.active) {
+    route.disrupted = false;
+    return route;
+  }
+  let disrupted = false;
+  for (const leg of route.legs) {
+    if (leg.type !== 'mrt') continue;
+    const hit = legStationCodes(leg).some((code) => disruption.stationCodes.has(code));
+    leg.disrupted = hit;
+    if (hit) {
+      disrupted = true;
+      leg.disruptionNote = disruptionNoteForLine(disruption, leg.line);
+    }
+  }
+  route.disrupted = disrupted;
+  return route;
+}
+
 /** Enriches every in-vehicle leg with LTA load data (never throws). */
 async function enrichRoute(route, context) {
   const inVehicle = route.legs.filter((leg) => leg.type === 'bus' || leg.type === 'mrt');
@@ -399,8 +438,12 @@ async function enrichRoute(route, context) {
 
 /**
  * Applies the recommendation rule:
- *   1. Find the fastest route.
- *   2. Consider every route within `tolerance` (default 10%) of that time.
+ *   1. Find the fastest route - among routes clear of a live service
+ *      disruption when at least one exists, since a disruption is a hard
+ *      constraint rather than a comfort preference the usual tolerance can
+ *      trade away.
+ *   2. Consider every remaining route within `tolerance` (default 10%) of
+ *      that time.
  *   3. Recommend the candidate with the lowest passenger load.
  *
  * Routes with no live load data are treated as neutral (0.5) so a route with
@@ -410,9 +453,12 @@ export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE } = {}) {
   if (routes.length === 0) return { routes, recommendation: null };
 
   const NEUTRAL_SCORE = 0.5;
-  const fastest = routes.reduce((best, route) => (route.durationMinutes < best.durationMinutes ? route : best));
+  const fastestOverall = routes.reduce((best, route) => (route.durationMinutes < best.durationMinutes ? route : best));
+  const hasCleanRoute = routes.some((route) => !route.disrupted);
+  const pool = hasCleanRoute ? routes.filter((route) => !route.disrupted) : routes;
+  const fastest = pool.reduce((best, route) => (route.durationMinutes < best.durationMinutes ? route : best));
   const cutoffMinutes = fastest.durationMinutes * (1 + tolerance);
-  const candidates = routes.filter((route) => route.durationMinutes <= cutoffMinutes + 1e-9);
+  const candidates = pool.filter((route) => route.durationMinutes <= cutoffMinutes + 1e-9);
 
   const ranked = candidates
     .map((route) => ({
@@ -457,13 +503,24 @@ export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE } = {}) {
       + `(${winner.durationMinutes} min vs ${fastest.durationMinutes} min).`;
   }
 
+  if (winner.disrupted) {
+    reason += ' Every option currently passes through a live service alert - this keeps the affected stretch as short as possible.';
+  } else if (fastestOverall.disrupted && fastestOverall.id !== winner.id) {
+    reason += ' A faster route exists but was skipped because it is affected by a live service alert.';
+  }
+
   winner.recommendationReason = reason;
   for (const route of ordered) {
     if (route.id === winner.id) continue;
     const slowerPercent = fastest.durationMinutes > 0
       ? Math.round(((route.durationMinutes - fastest.durationMinutes) / fastest.durationMinutes) * 100)
       : 0;
-    if (!orderedCandidates.includes(route)) {
+    if (route.disrupted && hasCleanRoute) {
+      const lines = [...new Set(
+        route.legs.filter((leg) => leg.disrupted).map((leg) => lineMeta(leg.line)?.short || leg.line),
+      )];
+      route.recommendationReason = `Avoided - affected by a live service alert on ${lines.join(', ') || 'the rail network'}.`;
+    } else if (!orderedCandidates.includes(route)) {
       route.recommendationReason = `${route.durationMinutes} min - more than ${Math.round(tolerance * 100)}% slower than the fastest route (${fastest.durationMinutes} min).`;
     } else if (route.transfers > winner.transfers && route.durationMinutes >= winner.durationMinutes) {
       route.recommendationReason = 'Same travel-time window but more interchanges than the recommended route.';
@@ -495,6 +552,7 @@ export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE } = {}) {
         minutes: entry.route.durationMinutes,
         band: entry.route.load?.band?.key || 'unknown',
       })),
+      disruptionAvoided: hasCleanRoute && Boolean(fastestOverall.disrupted),
     },
   };
 }
@@ -514,7 +572,7 @@ export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE } = {}) {
  * @param {number} [options.maxRoutes]             cap on returned route count
  * @param {boolean} [options.includeServiceInfo]   include bus operator/frequency details
  * @param {boolean} [options.includeStationInfo]   include interchange info per station
- * @param {'auto'|'onemap'|'lta'} [options.planner] force a routing source (debug/QA)
+ * @param {'auto'|'google'|'onemap'|'lta'} [options.planner] force a routing source (debug/QA)
  */
 export async function planJourneyRoutes({
   origin,
@@ -532,13 +590,40 @@ export async function planJourneyRoutes({
   const queryModes = requested.length > 0 ? requested : ['TRANSIT'];
 
   const warnings = [];
-  /** @type {Map<string, { itinerary: any, modes: Set<string> }>} */
-  const collected = new Map();
   let routingSource = null;
   /** @type {any} */
   let analyzedLocal = null;
 
-  if (planner !== 'lta') {
+  const disruption = await getServiceDisruption().catch(() => ({
+    active: false, segments: [], stationCodes: new Set(), lineCodes: new Set(), messages: [],
+  }));
+  if (disruption.active) {
+    warnings.push({ mode: 'warning', message: disruptionSummary(disruption) });
+  }
+
+  /** @type {any[]} */
+  let summarized = [];
+
+  // 1. Google Maps Routes API - preferred when a key is configured.
+  if (routingSource === null && planner !== 'onemap' && planner !== 'lta' && hasGoogleRoutesKey()) {
+    try {
+      const googleRoutes = await computeGoogleTransitRoutes({ origin, destination, dateTime, modes: queryModes });
+      if (googleRoutes.length > 0) {
+        summarized = googleRoutes.slice(0, maxRoutes);
+        routingSource = 'google';
+      } else if (planner === 'google') {
+        warnings.push({ mode: 'google', message: 'Google routing was requested but returned no itineraries.' });
+      }
+    } catch (error) {
+      warnings.push({ mode: 'google', message: error.message || 'Google routing request failed.' });
+    }
+  }
+
+  // 2. OneMap's public transport routing service - fallback, or when
+  // explicitly requested.
+  if (routingSource === null && planner !== 'lta' && planner !== 'google') {
+    /** @type {Map<string, { itinerary: any, modes: Set<string> }>} */
+    const collected = new Map();
     const settled = await Promise.allSettled(
       queryModes.map((mode) => planJourney({
         start: origin,
@@ -564,45 +649,59 @@ export async function planJourneyRoutes({
       }
     });
 
-    if (collected.size > 0) routingSource = 'onemap';
-  }
-
-  const context = {
-    nowMs,
-    departureMs: dateTime.getTime(),
-    // Plans more than 15 minutes ahead use the 30-minute crowd forecast;
-    // sooner departures use LTA's live 10-minute crowd reading.
-    useForecast: dateTime.getTime() - nowMs > 15 * 60 * 1000,
-    includeServiceInfo,
-    includeStationInfo,
-  };
-
-  /** @type {any[]} */
-  let summarized = [];
-
-  if (routingSource === 'onemap') {
-    summarized = [...collected.values()]
-      .sort((a, b) => (a.itinerary.duration || 0) - (b.itinerary.duration || 0))
-      .slice(0, maxRoutes)
-      .map((entry, index) => {
-        const route = summarizeItinerary(entry.itinerary, index, { origin, destination });
-        route.queryModes = [...entry.modes];
-        route.source = 'onemap';
-        route.planner = 'OneMap routing (OTP)';
-        return route;
-      });
-  } else {
-    // OneMap routing is unavailable (or was skipped): fall back to the LTA
-    // DataMall-native planner so the app keeps working, and say so in the API.
-    if (planner === 'onemap') {
+    if (collected.size > 0) {
+      summarized = [...collected.values()]
+        .sort((a, b) => (a.itinerary.duration || 0) - (b.itinerary.duration || 0))
+        .slice(0, maxRoutes)
+        .map((entry, index) => {
+          const route = summarizeItinerary(entry.itinerary, index, { origin, destination });
+          route.queryModes = [...entry.modes];
+          route.source = 'onemap';
+          route.planner = 'OneMap routing (OTP)';
+          return route;
+        });
+      routingSource = 'onemap';
+    } else if (planner === 'onemap') {
       warnings.push({ mode: 'onemap', message: 'OneMap routing was requested but returned no itineraries.' });
     }
+  }
+
+  // Neither Google nor OneMap knows about live LTA service alerts, so either
+  // can hand back itineraries that ride straight through a disruption. Ask
+  // the LTA-native planner for alternates that route around the affected
+  // stations and fold in the ones it finds, so a real reroute is offered
+  // instead of only a warning.
+  if ((routingSource === 'google' || routingSource === 'onemap') && disruption.active) {
+    const detour = await planJourneysLocally({
+      origin,
+      destination,
+      dateTime,
+      modes: queryModes,
+      maxRoutes: Math.max(3, Math.round(maxRoutes / 2)),
+      avoidStations: disruption.stationCodes,
+    }).catch(() => null);
+    if (detour?.routes?.length) {
+      const existingSignatures = new Set(summarized.map((route) => (route.routeCodes || []).join('+')));
+      for (const route of detour.routes) {
+        if (existingSignatures.has((route.routeCodes || []).join('+'))) continue;
+        route.source = 'lta';
+        route.planner = PLANNER_NAME;
+        route.rerouted = true;
+        summarized.push(route);
+      }
+    }
+  }
+
+  // 3. LTA DataMall-native planner - the always-available last resort, so the
+  // app keeps working with no Google key and no OneMap routing.
+  if (routingSource === null && planner !== 'onemap' && planner !== 'google') {
     const local = await planJourneysLocally({
       origin,
       destination,
       dateTime,
       modes: queryModes,
       maxRoutes: Math.max(maxRoutes, 6),
+      avoidStations: disruption.active ? disruption.stationCodes : null,
     });
     analyzedLocal = local;
     summarized = local.routes;
@@ -611,11 +710,13 @@ export async function planJourneyRoutes({
       routingSource = 'lta';
       warnings.push({
         mode: 'info',
-        message: 'OneMap routing is not enabled for this token, so journeys were planned with LTA DataMall '
+        message: 'Neither Google Routes nor OneMap routing is enabled, so journeys were planned with LTA DataMall '
           + 'bus routes and the MRT network (times are estimates).',
       });
     }
   }
+
+  summarized.forEach((route) => applyDisruption(route, disruption));
 
   if (summarized.length === 0) {
     return {
@@ -630,12 +731,29 @@ export async function planJourneyRoutes({
       recommendation: null,
       warnings: warnings.length > 0 ? warnings : [{ mode: 'info', message: 'No routes found for this trip.' }],
       routes: [],
+      disruption: { active: disruption.active, lines: [...disruption.lineCodes] },
     };
   }
+
+  const context = {
+    nowMs,
+    departureMs: dateTime.getTime(),
+    // Plans more than 15 minutes ahead use the 30-minute crowd forecast;
+    // sooner departures use LTA's live 10-minute crowd reading.
+    useForecast: dateTime.getTime() - nowMs > 15 * 60 * 1000,
+    includeServiceInfo,
+    includeStationInfo,
+  };
 
   await Promise.all(summarized.map((route) => enrichRoute(route, context)));
 
   const { routes, recommendation } = rankRoutes(summarized, { tolerance });
+
+  const plannerLabel = {
+    google: 'Google Maps Transit Route API',
+    onemap: 'OneMap routing (OTP)',
+    lta: PLANNER_NAME,
+  }[routingSource] || null;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -645,11 +763,16 @@ export async function planJourneyRoutes({
     tolerancePercent: Math.round(tolerance * 100),
     queryModes,
     routingSource,
-    planner: routingSource === 'lta' ? PLANNER_NAME : 'OneMap routing (OTP)',
+    planner: plannerLabel,
     localPlannerStats: routingSource === 'lta' ? analyzedLocal?.stats || null : null,
     routeCount: routes.length,
     recommendation,
     warnings,
     routes,
+    disruption: {
+      active: disruption.active,
+      lines: [...disruption.lineCodes],
+      stations: [...disruption.stationCodes],
+    },
   };
 }

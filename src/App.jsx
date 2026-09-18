@@ -119,6 +119,7 @@ export function App() {
 
   const selectedRoute = plan?.routes?.find((route) => route.id === selectedRouteId) || null;
   const ltaOk = health.data?.integrationsLive?.ltaConfigured;
+  const googleOk = health.data?.integrationsLive?.googleRoutesLive;
   const oneMapOk = health.data?.integrationsLive?.oneMapTokenUsable;
   const alertMessages = alerts.data?.messages || [];
   const showAlerts = Boolean(alerts.data) && !alertsDismissed
@@ -135,6 +136,7 @@ export function App() {
           </div>
         </div>
         <div className="app__status">
+          <StatusPill ok={googleOk} label="Google Routes" offlineLabel="Google key missing" />
           <StatusPill ok={ltaOk} label="LTA DataMall" offlineLabel="LTA key missing" />
           <StatusPill ok={oneMapOk} label="OneMap" offlineLabel="OneMap token missing" />
         </div>

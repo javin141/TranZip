@@ -105,6 +105,9 @@ function RailDetails({ leg }) {
   const stations = load.stations || [];
   return (
     <div className="leg-detail">
+      {leg.disrupted && (
+        <p className="leg-detail__note leg-detail__note--warning">⚠️ {leg.disruptionNote || 'Affected by a live LTA service alert.'}</p>
+      )}
       {stations.length > 0 && (
         <div className="leg-detail__row">
           <span className="leg-detail__key">Crowd by station</span>
@@ -158,7 +161,6 @@ export function LegRow({ leg, expanded, onHover }) {
   return (
     <li
       className={classNames('leg-row', `leg-row--${leg.type}`, expanded && 'is-expanded')}
-      onMouseEnter={onHover}
       onClick={onHover}
     >
       <span className="leg-row__marker" style={{ '--leg-tone': legColour(leg) }} aria-hidden="true">
@@ -171,6 +173,7 @@ export function LegRow({ leg, expanded, onHover }) {
             {isRide && leg.numStops > 0 && (
               <span className="leg-row__sub">{`${leg.numStops} stop${leg.numStops === 1 ? '' : 's'}`}</span>
             )}
+            {leg.disrupted && <span className="leg-row__alert" title="Live service alert">⚠️</span>}
           </span>
           <span className="leg-row__times">
             <span>{formatClock(leg.departure)} – {formatClock(leg.arrival)}</span>

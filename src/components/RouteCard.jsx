@@ -54,6 +54,19 @@ export function RouteCard({
         </p>
       )}
 
+      {route.disrupted && (
+        <p className="route-card__ribbon route-card__ribbon--warning">
+          <span className="route-card__ribbon-badge route-card__ribbon-badge--warning">Service alert</span>
+          <span className="route-card__ribbon-text">This route passes through a live LTA service alert.</span>
+        </p>
+      )}
+      {!route.disrupted && route.rerouted && (
+        <p className="route-card__ribbon route-card__ribbon--info">
+          <span className="route-card__ribbon-badge route-card__ribbon-badge--info">Rerouted</span>
+          <span className="route-card__ribbon-text">Replanned to avoid a live service alert.</span>
+        </p>
+      )}
+
       <header className="route-card__header">
         <button
           type="button"

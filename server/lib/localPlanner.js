@@ -167,8 +167,8 @@ async function buildBusSegment(route, boardIndex, alightIndex) {
 }
 
 /** Rail segments (one per line) for a station-to-station path. */
-async function buildRailSegments(fromCode, toCode, { waitMinutes = RAIL_WAIT_MINUTES } = {}) {
-  const path = await findRailPath(fromCode, toCode);
+async function buildRailSegments(fromCode, toCode, { waitMinutes = RAIL_WAIT_MINUTES, avoidStations = null } = {}) {
+  const path = await findRailPath(fromCode, toCode, { avoidStations });
   if (!path || path.stations.length < 2) return null;
 
   const segments = splitPathByLine(path).filter((segment) => segment.stations.length > 1);
@@ -263,13 +263,24 @@ async function buildStationAccessIndex() {
 }
 
 /** Resolves the origin/destination access points once per request. */
-async function resolveAccess(origin, destination) {
+async function resolveAccess(origin, destination, avoidStations = null) {
   const [originStops, destStops, originStations, destStations] = await Promise.all([
     stopsNear(origin, { radiusMeters: MAX_WALK_TO_BUS, limit: 18 }),
     stopsNear(destination, { radiusMeters: MAX_WALK_TO_BUS, limit: 18 }),
     nearestStations(origin, { limit: 3, maxMeters: MAX_WALK_TO_RAIL }),
     nearestStations(destination, { limit: 3, maxMeters: MAX_WALK_TO_RAIL }),
   ]);
+  // Don't offer a disrupted station as a boarding/alighting point at all -
+  // findRailPath would refuse it anyway, but filtering here lets the next
+  // nearest station take its place instead of just losing a candidate.
+  if (avoidStations && avoidStations.size > 0) {
+    return {
+      originStops,
+      destStops,
+      originStations: originStations.filter((station) => !avoidStations.has(station.code)),
+      destStations: destStations.filter((station) => !avoidStations.has(station.code)),
+    };
+  }
   return { originStops, destStops, originStations, destStations };
 }
 
@@ -283,12 +294,12 @@ function walkOnlyCandidate(origin, destination) {
   return makeCandidate([buildWalkSegment(origin, destination, { labelTo: destination })]);
 }
 
-async function railOnlyCandidates({ origin, destination, originStations, destStations }) {
+async function railOnlyCandidates({ origin, destination, originStations, destStations, avoidStations = null }) {
   const candidates = [];
   for (const from of originStations) {
     for (const to of destStations) {
       if (from.code === to.code) continue;
-      const rail = await buildRailSegments(from.code, to.code);
+      const rail = await buildRailSegments(from.code, to.code, { avoidStations });
       if (!rail) continue;
       const toWalk = buildWalkSegment(rail[rail.length - 1].to, destination, { labelTo: destination });
       if (toWalk.meters > MAX_WALK_TO_RAIL) continue;
@@ -345,7 +356,7 @@ async function directBusCandidates({ origin, destination, originStops, destStops
 }
 
 /** Bus to a rail station, then rail to a station near the destination. */
-async function busThenRailCandidates({ origin, destination, originStops, destStations }) {
+async function busThenRailCandidates({ origin, destination, originStops, destStations, avoidStations = null }) {
   const railAccess = await stationAccessIndex();
   const candidates = [];
   const used = new Set();
@@ -363,7 +374,7 @@ async function busThenRailCandidates({ origin, destination, originStops, destSta
       const limit = Math.min(route.stops.length - 1, boardIndex + 60);
       for (let index = boardIndex + 1; index <= limit; index += 1) {
         const hit = railAccess.get(route.stops[index].code);
-        if (!hit) continue;
+        if (!hit || avoidStations?.has(hit.station.code)) continue;
         const meters = route.stops[index].distance - route.stops[boardIndex].distance;
         if (meters > 14000) break;
         transfers.push({ index, station: hit.station, meters });
@@ -375,7 +386,7 @@ async function busThenRailCandidates({ origin, destination, originStops, destSta
           if (to.code === transfer.station.code) continue;
           const key = `${route.serviceNo}|${route.direction}|${transfer.station.code}|${to.code}`;
           if (used.has(key)) continue;
-          const rail = await buildRailSegments(transfer.station.code, to.code);
+          const rail = await buildRailSegments(transfer.station.code, to.code, { avoidStations });
           if (!rail) continue;
           used.add(key);
 
@@ -402,7 +413,7 @@ async function busThenRailCandidates({ origin, destination, originStops, destSta
 }
 
 /** Rail to a station near the destination, then a feeder bus to the destination. */
-async function railThenBusCandidates({ origin, destination, originStations, destStops }) {
+async function railThenBusCandidates({ origin, destination, originStations, destStops, avoidStations = null }) {
   const candidates = [];
   const railAccess = await stationAccessIndex();
 
@@ -427,14 +438,14 @@ async function railThenBusCandidates({ origin, destination, originStations, dest
       const board = route.stops
         .slice(0, 6)
         .map((stop, index) => ({ stop, index, access: railAccess.get(stop.code) }))
-        .find((entry) => entry.access);
+        .find((entry) => entry.access && !avoidStations?.has(entry.access.station.code));
       if (!board) continue;
 
       for (const target of targets) {
         const alightIndex = route.stops.findIndex((stop) => stop.code === target.stop.code);
         if (alightIndex <= board.index) continue;
         if (from.code === board.access.station.code) continue;
-        const rail = await buildRailSegments(from.code, board.access.station.code);
+        const rail = await buildRailSegments(from.code, board.access.station.code, { avoidStations });
         if (!rail) continue;
         const busSegment = await buildBusSegment(route, board.index, alightIndex);
         if (!busSegment) continue;
@@ -643,6 +654,9 @@ export function finalizeCandidate(candidate, { origin, destination, departureMs 
  * @param {Date}    [options.dateTime]
  * @param {string[]} [options.modes]  TRANSIT (mixed) / BUS / RAIL
  * @param {number}  [options.maxRoutes]
+ * @param {Set<string>} [options.avoidStations] Station codes to route around
+ *   (see `railNetwork.findRailPath`) - set when a live LTA service alert is
+ *   active, so every candidate shape detours around the affected stations.
  * @returns {Promise<{ routes: any[], warnings: {mode: string, message: string}[], stats: object }>}
  */
 export async function planJourneysLocally({
@@ -651,6 +665,7 @@ export async function planJourneysLocally({
   dateTime = new Date(),
   modes = ['TRANSIT', 'BUS', 'RAIL'],
   maxRoutes = 6,
+  avoidStations = null,
 } = {}) {
   const started = Date.now();
   const warnings = [];
@@ -661,7 +676,7 @@ export async function planJourneysLocally({
     return { routes: [], warnings: [{ mode: 'local', message: 'No bus or rail mode selected.' }], stats: {} };
   }
 
-  const access = await resolveAccess(origin, destination);
+  const access = await resolveAccess(origin, destination, avoidStations);
   if (access.originStops.length === 0 && access.originStations.length === 0) {
     warnings.push({ mode: 'local', message: 'No bus stop or MRT station was found near the starting point.' });
   }
@@ -671,7 +686,9 @@ export async function planJourneysLocally({
 
   const tasks = [];
   if (allowRail) {
-    tasks.push(railOnlyCandidates({ origin, destination, originStations: access.originStations, destStations: access.destStations }));
+    tasks.push(railOnlyCandidates({
+      origin, destination, originStations: access.originStations, destStations: access.destStations, avoidStations,
+    }));
   }
   if (allowBus) {
     tasks.push(directBusCandidates({ origin, destination, originStops: access.originStops, destStops: access.destStops }));
@@ -679,10 +696,10 @@ export async function planJourneysLocally({
   }
   if (allowBus && allowRail) {
     tasks.push(busThenRailCandidates({
-      origin, destination, originStops: access.originStops, destStations: access.destStations,
+      origin, destination, originStops: access.originStops, destStations: access.destStations, avoidStations,
     }));
     tasks.push(railThenBusCandidates({
-      origin, destination, originStations: access.originStations, destStops: access.destStops,
+      origin, destination, originStations: access.originStations, destStops: access.destStops, avoidStations,
     }));
   }
 
