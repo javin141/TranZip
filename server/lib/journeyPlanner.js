@@ -22,6 +22,7 @@ import { planJourney, ROUTE_MODES } from './oneMapClient.js';
 import { computeGoogleTransitRoutes, hasGoogleRoutesKey } from './googleRoutesClient.js';
 import { planJourneysLocally, PLANNER_NAME } from './localPlanner.js';
 import { getServiceDisruption, disruptionSummary, disruptionNoteForLine } from './disruptions.js';
+import { getWeatherNear } from './weatherClient.js';
 import { decodePolyline } from './polyline.js';
 import {
   LOAD_BANDS,
@@ -388,6 +389,28 @@ function applyDisruption(route, disruption) {
   return route;
 }
 
+/* ------------------------------------------------------------------ *
+ * Weather-aware ranking (opt-in)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Notes how exposed a route is to current weather (time spent walking), for
+ * display only - the actual ranking bias lives in `rankRoutes`. Called on
+ * every route regardless of whether weather-avoidance is active, so the UI
+ * field is always present (`null` when inactive).
+ */
+function applyWeather(route, weather) {
+  if (!weather?.active) {
+    route.weatherNote = null;
+    return route;
+  }
+  const walkMinutes = route.walkMinutes || 0;
+  route.weatherNote = walkMinutes > 0
+    ? `${Math.round(walkMinutes)} min on foot ${weather.condition === 'rain' ? 'in the rain' : 'in the heat'}.`
+    : `No time on foot${weather.condition === 'rain' ? ' - stays under cover.' : ' - stays out of the heat.'}`;
+  return route;
+}
+
 /** Enriches every in-vehicle leg with LTA load data (never throws). */
 async function enrichRoute(route, context) {
   const inVehicle = route.legs.filter((leg) => leg.type === 'bus' || leg.type === 'mrt');
@@ -448,11 +471,18 @@ async function enrichRoute(route, context) {
  *
  * Routes with no live load data are treated as neutral (0.5) so a route with
  * known-good load always wins a tie, and remaining ties fall back to time.
+ *
+ * When `weatherActive` is set (the user opted into rain/heat avoidance and
+ * it's currently raining or hot), each route's rank score blends its crowd
+ * load with how much of the trip is spent walking - a preference, not a hard
+ * filter like the disruption rule above, since staying dry is a comfort
+ * trade-off the traveller opted into rather than a route being unusable.
  */
-export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE } = {}) {
+export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE, weatherActive = false } = {}) {
   if (routes.length === 0) return { routes, recommendation: null };
 
   const NEUTRAL_SCORE = 0.5;
+  const WEATHER_WEIGHT = 0.5;
   const fastestOverall = routes.reduce((best, route) => (route.durationMinutes < best.durationMinutes ? route : best));
   const hasCleanRoute = routes.some((route) => !route.disrupted);
   const pool = hasCleanRoute ? routes.filter((route) => !route.disrupted) : routes;
@@ -460,11 +490,15 @@ export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE } = {}) {
   const cutoffMinutes = fastest.durationMinutes * (1 + tolerance);
   const candidates = pool.filter((route) => route.durationMinutes <= cutoffMinutes + 1e-9);
 
+  const rankScoreFor = (route) => {
+    const loadScore = typeof route.load?.score === 'number' ? route.load.score : NEUTRAL_SCORE;
+    if (!weatherActive || !(route.durationMinutes > 0)) return loadScore;
+    const walkShare = Math.min(1, (route.walkMinutes || 0) / route.durationMinutes);
+    return loadScore * (1 - WEATHER_WEIGHT) + walkShare * WEATHER_WEIGHT;
+  };
+
   const ranked = candidates
-    .map((route) => ({
-      route,
-      rankScore: typeof route.load?.score === 'number' ? route.load.score : NEUTRAL_SCORE,
-    }))
+    .map((route) => ({ route, rankScore: rankScoreFor(route) }))
     .sort((a, b) => {
       if (Math.abs(a.rankScore - b.rankScore) > 0.05) return a.rankScore - b.rankScore;
       if (a.route.durationMinutes !== b.route.durationMinutes) return a.route.durationMinutes - b.route.durationMinutes;
@@ -490,17 +524,36 @@ export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE } = {}) {
     ? Math.round((deltaMinutes / fastest.durationMinutes) * 100)
     : 0;
 
+  // Weather bias can make the winner's raw crowd load *worse* than the
+  // fastest route's (walk-exposure outweighed it) - the usual "lower load
+  // instead of higher" phrasing would then misdescribe the trade-off, so it
+  // switches to comparing walking time instead, which is what actually
+  // decided it.
+  const winnerWalk = Math.round(winner.walkMinutes || 0);
+  const fastestWalk = Math.round(fastest.walkMinutes || 0);
+  const weatherDecided = weatherActive && winnerWalk !== fastestWalk;
+
   let reason;
   if (winner.id === fastest.id && ranked.length === 1) {
     reason = `Fastest option at ${winner.durationMinutes} min and the only route within ${Math.round(tolerance * 100)}% of it.`;
   } else if (winner.id === fastest.id) {
     reason = `Fastest option at ${winner.durationMinutes} min, and it also has the lowest passenger load among comparable routes.`;
+  } else if (weatherDecided) {
+    reason = `${deltaPercent <= 0 ? 'Just as fast as the quickest route' : `Only ${deltaPercent}% slower than the quickest route`} `
+      + `but ${winnerWalk} min on foot instead of ${fastestWalk} min `
+      + `(${winner.durationMinutes} min vs ${fastest.durationMinutes} min).`;
   } else {
     const winnerBand = winner.load?.band?.short || 'lower';
     const fastestBand = fastest.load?.band?.short || 'higher';
     reason = `${deltaPercent <= 0 ? 'Just as fast as the quickest route' : `Only ${deltaPercent}% slower than the quickest route`} `
       + `but ${String(winnerBand).toLowerCase()} load instead of ${String(fastestBand).toLowerCase()} `
       + `(${winner.durationMinutes} min vs ${fastest.durationMinutes} min).`;
+  }
+
+  if (weatherActive && !weatherDecided) {
+    reason += ` ${winner.weatherNote || "It's raining or hot right now"} - routes were weighted toward less time on foot.`;
+  } else if (weatherActive) {
+    reason += " It's raining or hot right now, so routes were weighted toward less time on foot.";
   }
 
   if (winner.disrupted) {
@@ -572,6 +625,7 @@ export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE } = {}) {
  * @param {number} [options.maxRoutes]             cap on returned route count
  * @param {boolean} [options.includeServiceInfo]   include bus operator/frequency details
  * @param {boolean} [options.includeStationInfo]   include interchange info per station
+ * @param {boolean} [options.avoidWeather]         bias ranking toward less time on foot when it's raining/hot
  * @param {'auto'|'google'|'onemap'|'lta'} [options.planner] force a routing source (debug/QA)
  */
 export async function planJourneyRoutes({
@@ -583,6 +637,7 @@ export async function planJourneyRoutes({
   maxRoutes = 6,
   includeServiceInfo = true,
   includeStationInfo = true,
+  avoidWeather = false,
   planner = 'auto',
 } = {}) {
   const nowMs = Date.now();
@@ -599,6 +654,16 @@ export async function planJourneyRoutes({
   }));
   if (disruption.active) {
     warnings.push({ mode: 'warning', message: disruptionSummary(disruption) });
+  }
+
+  const weather = avoidWeather ? await getWeatherNear(origin).catch(() => null) : null;
+  const weatherActive = Boolean(weather && (weather.isRaining || weather.isHot));
+  if (avoidWeather && weatherActive) {
+    const conditionText = weather.isRaining
+      ? `Raining now${weather.forecastText ? ` (${weather.forecastText})` : ''}`
+      : `Hot right now${typeof weather.temperatureC === 'number' ? ` (${Math.round(weather.temperatureC)}°C)` : ''}`;
+    const prefix = weather.simulated ? '[SIMULATED] ' : '';
+    warnings.push({ mode: 'weather', message: `${prefix}${conditionText}. Routes were weighted toward less time on foot.` });
   }
 
   /** @type {any[]} */
@@ -716,7 +781,10 @@ export async function planJourneyRoutes({
     }
   }
 
-  summarized.forEach((route) => applyDisruption(route, disruption));
+  summarized.forEach((route) => {
+    applyDisruption(route, disruption);
+    applyWeather(route, weatherActive ? { active: true, condition: weather.condition } : null);
+  });
 
   if (summarized.length === 0) {
     return {
@@ -732,6 +800,7 @@ export async function planJourneyRoutes({
       warnings: warnings.length > 0 ? warnings : [{ mode: 'info', message: 'No routes found for this trip.' }],
       routes: [],
       disruption: { active: disruption.active, lines: [...disruption.lineCodes] },
+      weather: weather ? { active: weatherActive, condition: weather.condition, temperatureC: weather.temperatureC, rainfallMm: weather.rainfallMm } : { active: false },
     };
   }
 
@@ -747,7 +816,7 @@ export async function planJourneyRoutes({
 
   await Promise.all(summarized.map((route) => enrichRoute(route, context)));
 
-  const { routes, recommendation } = rankRoutes(summarized, { tolerance });
+  const { routes, recommendation } = rankRoutes(summarized, { tolerance, weatherActive });
 
   const plannerLabel = {
     google: 'Google Maps Transit Route API',
@@ -774,5 +843,16 @@ export async function planJourneyRoutes({
       lines: [...disruption.lineCodes],
       stations: [...disruption.stationCodes],
     },
+    weather: weather
+      ? {
+        active: weatherActive,
+        condition: weather.condition,
+        isRaining: weather.isRaining,
+        isHot: weather.isHot,
+        temperatureC: weather.temperatureC,
+        rainfallMm: weather.rainfallMm,
+        forecastText: weather.forecastText,
+      }
+      : { active: false },
   };
 }

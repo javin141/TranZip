@@ -80,4 +80,9 @@ export const api = {
   busStopLoads: (code, signal) => request(`/loads/bus-stop/${encodeURIComponent(code)}`, { signal }),
 
   serviceAlerts: (signal) => request('/loads/alerts', { signal }),
+
+  weatherNow: (latitude, longitude, signal) => request(
+    `/weather/now?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`,
+    { signal },
+  ),
 };

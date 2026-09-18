@@ -17,12 +17,21 @@ export function PlannerForm({
   onToleranceChange,
   modes,
   onToggleMode,
+  weather,
+  avoidWeather,
+  onToggleAvoidWeather,
   onPlan,
   planning,
   disabled,
 }) {
   const canPlan = Boolean(origin && destination) && !planning;
   const selectedTolerance = TOLERANCE_OPTIONS.find((option) => option.value === tolerance) || TOLERANCE_OPTIONS[1];
+  const weatherAdverse = weather && weather.condition !== 'clear';
+  const weatherLabel = weather?.condition === 'rain'
+    ? `🌧️ Raining now${typeof weather.rainfallMm === 'number' && weather.rainfallMm > 0 ? ` (${weather.rainfallMm.toFixed(1)}mm)` : ''} - prefer sheltered/bus routes?`
+    : weather?.condition === 'hot'
+      ? `🌡️ Hot now (${Math.round(weather.temperatureC)}°C) - prefer routes with less walking?`
+      : '☀️ Weather is clear right now - avoid rain/heat anyway?';
 
   return (
     <form
@@ -126,6 +135,25 @@ export function PlannerForm({
           </div>
         </div>
 
+        {weather && (
+          <div className="control-group control-group--weather">
+            <span className="control-group__label">Weather</span>
+            <button
+              type="button"
+              className={classNames(
+                'chip',
+                'chip--weather',
+                avoidWeather && 'is-active',
+                weatherAdverse && 'chip--weather-adverse',
+              )}
+              onClick={onToggleAvoidWeather}
+              title="When it's raining or hot, prefer routes that spend less time walking outdoors."
+            >
+              {weatherLabel}
+            </button>
+          </div>
+        )}
+
         <button type="submit" className="planner__submit" disabled={!canPlan}>
           {planning ? 'Planning…' : 'Plan journey'}
         </button>
@@ -137,6 +165,7 @@ export function PlannerForm({
         <strong>{tolerance}%</strong>
         {' '}
         of the fastest travel time, the one with the lowest passenger load wins.
+        {avoidWeather && ' When it\'s raining or hot, routes with less time on foot are favoured too.'}
         {!disabled && ' Load comes from LTA DataMall; routing and the map come from OneMap.'}
       </p>
     </form>

@@ -64,6 +64,12 @@ function readTolerance(raw) {
   return Math.min(Math.max(fraction, 0), 1);
 }
 
+function readBoolean(raw) {
+  if (raw === true || raw === false) return raw;
+  const value = String(raw ?? '').trim().toLowerCase();
+  return value === 'true' || value === '1' || value === 'yes';
+}
+
 function readModes(raw) {
   if (!raw) return ROUTE_MODES;
   const list = Array.isArray(raw) ? raw : String(raw).split(',');
@@ -101,6 +107,7 @@ export function buildPlanInput(source = {}) {
     tolerance: readTolerance(source.tolerance ?? source.tolerancePercent),
     modes: readModes(source.modes ?? source.mode),
     maxRoutes: Math.min(Math.max(Number(source.maxRoutes) || 6, 1), 8),
+    avoidWeather: readBoolean(source.avoidWeather),
   };
 }
 

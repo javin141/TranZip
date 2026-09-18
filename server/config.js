@@ -16,6 +16,10 @@ export const config = {
     baseUrl: 'https://routes.googleapis.com',
     apiKey: (process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_ROUTES_API_KEY || process.env.GOOGLE_API_KEY || '').trim(),
   },
+  weather: {
+    // NEA real-time readings via data.gov.sg - public, no API key required.
+    baseUrl: 'https://api-open.data.gov.sg/v2/real-time/api',
+  },
   oneMap: {
     baseUrl: 'https://www.onemap.gov.sg/api',
     token: (process.env.ONEMAP_TOKEN || '').trim(),
@@ -31,6 +35,7 @@ export const config = {
     crowdForecast: asInt(process.env.CACHE_TTL_CROWD_FORECAST_MS, 30 * 60 * 1000),
     alerts: asInt(process.env.CACHE_TTL_ALERTS_MS, 60000),
     route: asInt(process.env.CACHE_TTL_ROUTE_MS, 45000),
+    weather: asInt(process.env.CACHE_TTL_WEATHER_MS, 5 * 60 * 1000),
     placeSearch: 5 * 60 * 1000,
     stationName: 24 * 60 * 60 * 1000,
   },

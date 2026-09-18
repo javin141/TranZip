@@ -115,6 +115,9 @@ export function RouteCard({
         {route.load?.worstLeg && ` Busiest: ${route.load.worstLeg.label} (${route.load.worstLeg.band.label.toLowerCase()}).`}
         {route.load?.legsWithoutData > 0 && ` ${pluralise(route.load.legsWithoutData, 'leg')} without live data.`}
       </p>
+      {route.weatherNote && (
+        <p className="route-card__load-note route-card__load-note--weather">🌦️ {route.weatherNote}</p>
+      )}
       {route.recommendationReason && !isRecommended && (
         <p className="route-card__load-note route-card__load-note--muted">{route.recommendationReason}</p>
       )}

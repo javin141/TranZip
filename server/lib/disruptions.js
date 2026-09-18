@@ -6,7 +6,7 @@
  */
 import { getTrainServiceAlerts } from './ltaClient.js';
 import { isStationCode, lineMeta } from './railLines.js';
-import { disruptionOverride } from '../data/disruption.override.js';
+import { disruptionOverride } from '../data/test-overrides.js';
 
 let warnedAboutOverride = false;
 
@@ -56,14 +56,14 @@ function buildDisruption(rawSegments, messages, fetchedAt, simulated) {
  * }>}
  */
 export async function getServiceDisruption() {
-  // DEV/TEST hook - see server/data/disruption.override.js. Takes over the
-  // whole disruption pipeline (rerouting, ranking, UI flags) so a hardcoded
-  // alert can be exercised without waiting for a real one.
+  // DEV/TEST hook - see server/data/test-overrides.js. Takes over the whole
+  // disruption pipeline (rerouting, ranking, UI flags) so a hardcoded alert
+  // can be exercised without waiting for a real one.
   if (disruptionOverride?.active) {
     if (!warnedAboutOverride) {
       warnedAboutOverride = true;
       console.warn(
-        '[disruptions] TEST OVERRIDE ACTIVE - using the fake alert in server/data/disruption.override.js '
+        '[disruptions] TEST OVERRIDE ACTIVE - using the fake alert in server/data/test-overrides.js '
         + 'instead of live LTA data. Set active:false there when done testing.',
       );
     }

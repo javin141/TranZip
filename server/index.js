@@ -17,6 +17,7 @@ import { journeyRouter } from './routes/journey.js';
 import { loadsRouter } from './routes/loads.js';
 import { placesRouter } from './routes/places.js';
 import { systemRouter } from './routes/system.js';
+import { weatherRouter } from './routes/weather.js';
 import { cacheStats } from './lib/cache.js';
 import { catalogSummary, loadStationCatalog } from './lib/stationCatalog.js';
 import { getBusServicesMap, getBusStopsMap } from './lib/ltaClient.js';
@@ -82,6 +83,7 @@ app.use('/api/places', placeRateLimit, placesRouter);
 app.use('/api/journey', journeyRouter);
 app.use('/api/loads', loadsRouter);
 app.use('/api/system', systemRouter);
+app.use('/api/weather', weatherRouter);
 
 /* ------------------------------------------------------------------ *
  * Static production build (npm run build && npm start)

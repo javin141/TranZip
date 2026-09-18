@@ -43,9 +43,14 @@ export function App() {
   const [activeLegId, setActiveLegId] = useState(null);
   const [pickTarget, setPickTarget] = useState(null);
   const [alertsDismissed, setAlertsDismissed] = useState(false);
+  const [avoidWeather, setAvoidWeather] = useState(false);
 
   const health = useAsyncResource((signal) => api.health(signal), []);
   const alerts = useAsyncResource((signal) => api.serviceAlerts(signal), []);
+  const weather = useAsyncResource(
+    (signal) => api.weatherNow(origin?.latitude ?? 1.3521, origin?.longitude ?? 103.8198, signal),
+    [origin?.latitude, origin?.longitude],
+  );
 
   const planJourney = useCallback(async (from = origin, to = destination) => {
     if (!from || !to || planning) return;
@@ -57,6 +62,7 @@ export function App() {
         destination: to,
         tolerance,
         modes,
+        avoidWeather,
       };
       if (departureMode === 'schedule' && departAt) {
         payload.departAt = new Date(departAt).toISOString();
@@ -73,7 +79,7 @@ export function App() {
     } finally {
       setPlanning(false);
     }
-  }, [origin, destination, planning, tolerance, modes, departureMode, departAt]);
+  }, [origin, destination, planning, tolerance, modes, departureMode, departAt, avoidWeather]);
 
   const handleDepartureModeChange = (mode) => {
     setDepartureMode(mode);
@@ -178,6 +184,9 @@ export function App() {
             onToleranceChange={setTolerance}
             modes={modes}
             onToggleMode={handleToggleMode}
+            weather={weather.data}
+            avoidWeather={avoidWeather}
+            onToggleAvoidWeather={() => setAvoidWeather((value) => !value)}
             onPlan={() => planJourney()}
             planning={planning}
             disabled={false}
