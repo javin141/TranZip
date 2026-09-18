@@ -60,10 +60,17 @@ export function toneForBand(band) {
   return LOAD_TONES[band?.tone] || LOAD_TONES.unknown;
 }
 
-/** Colour for the leg polyline drawn on the map, by mode (walk/bus/other). */
+/**
+ * Colour for the leg polyline drawn on the map, by mode (walk/bus/other).
+ * Bus shares walking's pale sky blue - green clashed with the East-West/
+ * Changi line colour and "good" crowd-load status, and a distinct bus blue
+ * read too close to the Downtown Line / MRT default. Walking's dashed
+ * stroke (see MapView) already tells the two apart, so sharing a colour
+ * doesn't cost any clarity.
+ */
 export const LEG_COLOURS = {
   mrt: '#1a73e8',
-  bus: '#188038',
+  bus: '#64b5f6',
   walk: '#64b5f6',
   other: '#8430ce',
   recommended: '#1a73e8',

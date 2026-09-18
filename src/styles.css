@@ -30,7 +30,8 @@
   --info-soft: #e3f4fd;
 
   --mrt: #1a73e8;
-  --bus: #188038;
+  --bus: #64b5f6;
+  --bus-text: #0277bd;
   --walk: #64b5f6;
 
   --radius: 12px;
@@ -452,8 +453,8 @@ button {
 }
 
 .leg-chip--bus {
-  color: var(--bus);
-  background: var(--good-soft);
+  color: var(--bus-text);
+  background: color-mix(in srgb, var(--bus) 14%, white);
   border-color: transparent;
 }
 
