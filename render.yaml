@@ -1,0 +1,28 @@
+# ------------------------------------------------------------------
+# Render.com blueprint for NebulaX Transit
+# Deploy: push this repo to GitHub, then on https://dashboard.render.com
+# click "New +" -> "Blueprint" and pick the repo. Render will ask for
+# the secret values (LTA_ACCOUNT_KEY etc.) during creation.
+# ------------------------------------------------------------------
+
+services:
+  - type: web
+    name: nebulax-transit
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: PORT
+        value: "8787"
+      - key: LTA_ACCOUNT_KEY
+        sync: false
+      - key: ONEMAP_TOKEN
+        sync: false
+      - key: ONEMAP_EMAIL
+        sync: false
+      - key: ONEMAP_PASSWORD
+        sync: false
