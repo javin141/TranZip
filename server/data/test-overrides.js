@@ -74,7 +74,7 @@ export const demoDisruptionFixture = {
  * ones, with a rain note on the recommended route card.
  */
 export const weatherOverride = {
-  active: false,
+  active: true,
   condition: 'rain',
   rainfallMm: 4.5,
   temperatureC: 28,
