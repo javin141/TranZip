@@ -24,6 +24,7 @@ import { planJourneysLocally, PLANNER_NAME } from './localPlanner.js';
 import { getServiceDisruption, disruptionSummary, disruptionNoteForLine } from './disruptions.js';
 import { getWeatherNear } from './weatherClient.js';
 import { applyDurationRange } from './durationRange.js';
+import { inferLegTimes } from './legTimes.js';
 import { decodePolyline } from './polyline.js';
 import {
   LOAD_BANDS,
@@ -878,6 +879,7 @@ export async function planJourneyRoutes({
   }
 
   summarized.forEach((route) => {
+    inferLegTimes(route, { fallbackStartMs: dateTime.getTime() });
     applyDisruption(route, disruption);
     applyFreeTransfer(route, disruption);
     applyWeather(route, weatherActive ? { active: true, condition: weather.condition } : null);

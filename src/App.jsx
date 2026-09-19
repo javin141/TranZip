@@ -373,7 +373,7 @@ export function App() {
     <div className="app">
       <header className="app__header">
         <div className="app__brand">
-          <img src={new URL('./assets/logo.jpg', import.meta.url).href} alt="TranZip" className="app__logo-img" />
+          <img src="/logo.jpg" alt="TranZip" width="34" height="34" className="app__logo-img" />
           <div>
             <h1 className="app__title">TranZip</h1>
             <p className="app__subtitle">Singapore Journey Planner with Live Load</p>

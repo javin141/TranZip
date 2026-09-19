@@ -5,8 +5,10 @@ import { LEG_COLOURS, ONEMAP_ATTRIBUTION, TILE_ATTRIBUTION, TILE_URL, lineSwatch
 import { classNames, legLabel } from '../lib/format.js';
 
 const SINGAPORE_CENTER = [1.3521, 103.8198];
-// OSM contributors credited first, then the tile provider, then OneMap
-// (still used for search/routing even though it's no longer the map layer).
+// The tile provider's credit (OpenStreetMap contributors by default, see
+// TILE_ATTRIBUTION), then OneMap's - still used for search/routing even though
+// it no longer supplies the map layer. The footer is hidden on phones, so this
+// control is where the credits stay visible.
 const MAP_ATTRIBUTION = `${TILE_ATTRIBUTION} | ${ONEMAP_ATTRIBUTION}`;
 
 function pinIcon(kind) {

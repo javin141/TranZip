@@ -85,6 +85,26 @@ export function classNames(...values) {
   return values.filter(Boolean).join(' ');
 }
 
+/**
+ * Groups a route's legs for the summary chips, collapsing each run of
+ * consecutive walking legs into one group. Routing sources split a single
+ * stretch on foot into several legs ("walk", "take exit B", "walk"), which
+ * would otherwise show as a string of identical Walk bubbles. Only the chips
+ * are merged: the step-by-step timeline still lists every leg.
+ */
+export function chipGroups(legs) {
+  const groups = [];
+  for (const leg of legs || []) {
+    const previous = groups[groups.length - 1];
+    if (leg.type === 'walk' && previous?.type === 'walk') {
+      previous.legs.push(leg);
+    } else {
+      groups.push({ key: leg.id, type: leg.type, legs: [leg] });
+    }
+  }
+  return groups;
+}
+
 /** Human label for a leg: `Bus 57`, `NSL`, `Walk`. */
 export function legLabel(leg) {
   if (!leg) return '';

@@ -15,7 +15,7 @@
 
 const CACHE_PREFIX = 'tranzip-shell-';
 const CACHE_NAME = `${CACHE_PREFIX}__BUILD_ID__`;
-const STATIC_FILES = ['/manifest.webmanifest', '/icon.jpg'];
+const STATIC_FILES = ['/manifest.webmanifest', '/icon.jpg', '/logo.jpg'];
 // With a bad or absent connection, don't make someone wait on the network for the page.
 const NAVIGATION_TIMEOUT_MS = 4000;
 

@@ -2,7 +2,7 @@
  * Travel-time RANGES per leg and per route, from a few simple documented
  * rules. These are heuristics, not calibrated predictions: every constant
  * below is a round number chosen for plausibility, none was fitted to data.
- * The README's "Travel-time ranges" section mirrors this file.
+ * docs/how-it-works.md ("Travel-time ranges") mirrors this file.
  *
  * Every leg (and the route) gets `{ minMinutes, maxMinutes, typicalMinutes }`
  * in whole minutes, with minMinutes <= typicalMinutes <= maxMinutes.

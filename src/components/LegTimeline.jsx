@@ -182,7 +182,11 @@ export function LegRow({ leg, expanded, onHover }) {
             {leg.disrupted && <span className="leg-row__alert" title="Live service alert">⚠️</span>}
           </span>
           <span className="leg-row__times">
-            <span>{formatClock(leg.departure)} – {formatClock(leg.arrival)}</span>
+            {(leg.departure || leg.arrival) && (
+              <span title={leg.timesInferred ? 'Estimated from the neighbouring legs and this leg\'s walking time' : undefined}>
+                {leg.timesInferred ? '~' : ''}{formatClock(leg.departure)} – {leg.timesInferred ? '~' : ''}{formatClock(leg.arrival)}
+              </span>
+            )}
             <em>{formatMinutesRange(leg.durationRange, leg.durationMinutes)}</em>
             {leg.durationRange && <span className="leg-row__est">est.</span>}
           </span>

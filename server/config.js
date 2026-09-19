@@ -25,8 +25,6 @@ export const config = {
     token: (process.env.ONEMAP_TOKEN || '').trim(),
     email: (process.env.ONEMAP_EMAIL || '').trim(),
     password: process.env.ONEMAP_PASSWORD || '',
-    // The public basemap tiles used by Leaflet are key-less; documented styles:
-    tileStyles: ['Default', 'Original', 'Grey', 'GreyLite', 'Night', 'LandLot'],
   },
   ttl: {
     reference: asInt(process.env.CACHE_TTL_REFERENCE_MS, 24 * 60 * 60 * 1000),

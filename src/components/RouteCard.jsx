@@ -1,11 +1,27 @@
-import { classNames, formatFare, formatMinutes, formatMinutesRange, pluralise } from '../lib/format.js';
+import {
+  chipGroups,
+  classNames,
+  formatDistance,
+  formatFare,
+  formatMinutes,
+  formatMinutesRange,
+  pluralise,
+} from '../lib/format.js';
 import { lineSwatchColour, lineTextColour } from '../lib/constants.js';
 import { useFreshness } from '../lib/freshness.js';
 import { LoadBadge } from './LoadBadge.jsx';
 import { LegRow } from './LegTimeline.jsx';
 
-/** Small chip describing one leg of the route (used in the collapsed card). */
-function LegChip({ leg }) {
+/**
+ * Small chip in the collapsed card: one per ride, and one per unbroken stretch
+ * of walking (`legs` is that whole run, so "walk, take exit B, walk" is a single
+ * Walk chip whose tooltip totals the stretch).
+ */
+function LegChip({ legs }) {
+  const leg = legs[0];
+  // A walk leg's from/to are often turn instructions ("Head west"), not places, so the tooltip totals the stretch instead.
+  const walkTitle = `Walking · ${formatMinutes(legs.reduce((sum, item) => sum + (item.durationMinutes || 0), 0))}`
+    + ` · ${formatDistance(legs.reduce((sum, item) => sum + (item.distanceMeters || 0), 0))}`;
   const label = leg.type === 'bus'
     ? `Bus ${leg.serviceNo || leg.routeLabel}`
     : leg.type === 'mrt'
@@ -17,7 +33,11 @@ function LegChip({ leg }) {
     ? { '--tone': lineTextColour(leg.line), '--tone-swatch': lineSwatchColour(leg.line) }
     : undefined;
   return (
-    <span className={classNames('leg-chip', `leg-chip--${leg.type}`)} style={style} title={`${leg.from?.name} → ${leg.to?.name}`}>
+    <span
+      className={classNames('leg-chip', `leg-chip--${leg.type}`)}
+      style={style}
+      title={leg.type === 'walk' ? walkTitle : `${leg.from?.name} → ${leg.to?.name}`}
+    >
       {label}
       {leg.type !== 'walk' && leg.load?.band && (
         <i className={classNames('leg-chip__dot', `leg-chip__dot--${leg.load.band.tone}`)} aria-hidden="true" />
@@ -141,8 +161,8 @@ export function RouteCard({
       </header>
 
       <div className="route-card__chips">
-        {route.legs.map((leg) => (
-          <LegChip key={leg.id} leg={leg} />
+        {chipGroups(route.legs).map((group) => (
+          <LegChip key={group.key} legs={group.legs} />
         ))}
       </div>
 

@@ -32,7 +32,7 @@ app.use(cors());
 app.use(express.json({ limit: '256kb' }));
 
 /* ------------------------------------------------------------------ *
- * Platform metadata (basemap config, line catalogue, integration health)
+ * Platform metadata (line catalogue, integration health)
  * ------------------------------------------------------------------ */
 
 app.get('/api/meta', async (_req, res) => {
@@ -43,16 +43,6 @@ app.get('/api/meta', async (_req, res) => {
       ...integrationStatus(),
       googleRoutesLive: hasGoogleRoutesKey(),
       oneMapTokenLive: hasOneMapToken(),
-    },
-    oneMap: {
-      // Key-less basemap + search services documented at
-      // https://www.onemap.gov.sg/apidocs/maps and /apidocs/search
-      basemap: {
-        provider: 'OneMap',
-        tileStyles: config.oneMap.tileStyles,
-        defaultStyle: 'Default',
-        attribution: '&copy; OneMap &copy; Singapore Land Authority',
-      },
     },
     railLines: Object.values(RAIL_LINES),
     stations,
