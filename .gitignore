@@ -10,5 +10,3 @@ coverage/
 .cache/
 .claude/
 scripts/tmp-*
-# Backup archives can contain .env - never commit them
-*.zip
