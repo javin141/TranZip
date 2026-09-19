@@ -12,7 +12,10 @@
   --line-strong: #c9ccd1;
   --text: #202124;
   --muted: #5f6368;
-  --faint: #80868b;
+  /* #80868b (Google's usual "faint" grey) is only ~3.7:1 on white - under
+     the 4.5:1 floor for body text - so this is a darkened, WCAG AA-safe
+     substitute used everywhere faint/secondary text actually renders. */
+  --faint: #6b7075;
 
   --accent: #1a73e8;
   --accent-hover: #1765cc;
@@ -38,6 +41,18 @@
   --radius-sm: 8px;
   --shadow-sm: 0 1px 2px rgba(60, 64, 67, 0.30), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
   --shadow-md: 0 1px 3px rgba(60, 64, 67, 0.30), 0 4px 8px 3px rgba(60, 64, 67, 0.15);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* "A+" large-text toggle (App.jsx, persisted to localStorage): every
+   font-size in this file is expressed in rem, so scaling the root here
+   scales the whole app by the same ~1.25x in one place. */
+:root[data-large-text='true'] {
+  font-size: 125%;
 }
 
 * {
@@ -53,7 +68,9 @@ body {
 body {
   background: var(--bg-soft);
   color: var(--text);
-  font: 14.5px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  font-size: calc(14.5 / 16 * 1rem);
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
@@ -64,6 +81,20 @@ button {
   cursor: pointer;
 }
 
+/* Respect the OS-level "reduce motion" setting: kill transitions,
+   animations and smooth scrolling everywhere instead of picking them off
+   one at a time. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * App shell
  * ------------------------------------------------------------------ */
@@ -71,15 +102,17 @@ button {
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100vh; /* fallback for browsers without dvh support */
+  height: 100dvh; /* accounts for mobile browser chrome (address bar etc.) */
 }
 
 .app__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 10px 20px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: max(10px, var(--safe-top)) max(20px, var(--safe-right)) 10px max(20px, var(--safe-left));
   border-bottom: 1px solid var(--line);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
@@ -105,7 +138,7 @@ button {
 
 .app__title {
   margin: 0;
-  font-size: 17px;
+  font-size: calc(17 / 16 * 1rem);
   font-weight: 600;
   letter-spacing: 0;
   color: var(--text);
@@ -113,7 +146,7 @@ button {
 
 .app__subtitle {
   margin: 0;
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -132,7 +165,7 @@ button {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 500;
   color: var(--muted);
   background: var(--bg-soft);
@@ -150,6 +183,33 @@ button {
   color: var(--moderate);
   background: var(--moderate-soft);
   border-color: transparent;
+}
+
+.text-size-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: calc(13 / 16 * 1rem);
+  font-weight: 700;
+}
+
+.text-size-toggle:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.text-size-toggle.is-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 .app__main {
@@ -170,21 +230,50 @@ button {
   background: var(--bg-soft);
 }
 
+/*
+ * BottomSheet.jsx's wrapper. On desktop (default) it has no box of its own -
+ * `.app__panel` inside it keeps behaving exactly as the plain grid column it
+ * always was. The max-width:960px block below is what turns it into an
+ * actual draggable sheet; see BottomSheet.jsx for the drag logic that sets
+ * --sheet-height.
+ */
+.sheet {
+  display: contents;
+}
+
+.sheet__handle {
+  display: none;
+}
+
 .app__map-pane {
   position: relative;
   min-height: 0;
+  /* Contains Leaflet's own z-indexes (panes 200-700, controls 1000) in a stacking
+     context of their own; otherwise they tie with or beat the mobile bottom
+     sheet and the map draws over the route list. */
+  z-index: 0;
 }
 
 .app__footer {
   flex: none;
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 7px 20px;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 8px max(20px, var(--safe-right)) max(8px, var(--safe-bottom)) max(20px, var(--safe-left));
   border-top: 1px solid var(--line);
-  font-size: 11px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--faint);
   background: var(--surface);
+}
+
+.app__footer a {
+  color: var(--faint);
+  text-decoration: underline;
+}
+
+.app__footer a:hover {
+  color: var(--accent);
 }
 
 /* ------------------------------------------------------------------ *
@@ -199,11 +288,11 @@ button {
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: var(--surface);
-  font-size: 13px;
+  font-size: calc(13 / 16 * 1rem);
 }
 
 .banner__icon {
-  font-size: 17px;
+  font-size: calc(17 / 16 * 1rem);
   line-height: 1.2;
   flex: none;
 }
@@ -222,6 +311,80 @@ button {
   margin: 4px 0 0;
   padding-left: 18px;
   color: var(--muted);
+}
+
+.banner__body li {
+  margin-bottom: 3px;
+}
+
+.app__alerts-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.app__alerts-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-weight: 600;
+}
+
+.app__alerts-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.app__alerts-chevron {
+  flex: none;
+  padding: 0 6px;
+  color: var(--muted);
+}
+
+.app__alerts-detail ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.app__alerts-detail li {
+  margin-bottom: 3px;
+}
+
+.app__diagnostics {
+  display: contents;
+}
+
+.app__alerts-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.app__alerts-more {
+  margin: 4px 0 0;
+  font-size: calc(12 / 16 * 1rem);
+  color: var(--faint);
+}
+
+/* A visible, non-colour-dependent tag for demo/simulated data - used
+   anywhere a live value might otherwise be mistaken for the real thing. */
+.simulated-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--busy);
+  color: #ffffff;
+  font-size: calc(12 / 16 * 1rem);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  vertical-align: middle;
 }
 
 .banner p {
@@ -251,12 +414,16 @@ button {
 .banner__dismiss {
   margin-left: auto;
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
   color: var(--muted);
   border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: 4px 14px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 500;
 }
 
@@ -285,14 +452,14 @@ button {
 
 .results-head__title {
   margin: 0 0 2px;
-  font-size: 15px;
+  font-size: calc(15 / 16 * 1rem);
   font-weight: 600;
   color: var(--text);
 }
 
 .results-head__sub {
   margin: 0;
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
   max-width: 46ch;
 }
@@ -330,14 +497,14 @@ button {
   gap: 8px;
   margin: 0;
   padding: 8px 16px;
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
   background: var(--accent-soft);
   border-bottom: 1px solid var(--line);
 }
 
 .route-card__ribbon-badge {
   flex: none;
-  font-size: 11px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 600;
   padding: 2px 9px;
   border-radius: 999px;
@@ -370,7 +537,8 @@ button {
 .route-card__header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 14px 16px 10px;
 }
 
@@ -378,7 +546,9 @@ button {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  justify-content: center;
   gap: 1px;
+  min-height: 44px;
   border: none;
   background: transparent;
   padding: 0;
@@ -386,8 +556,32 @@ button {
   flex: none;
 }
 
+.delta-chip {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: calc(12 / 16 * 1rem);
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.delta-chip--worse {
+  color: var(--busy);
+  background: var(--busy-soft);
+  border-color: transparent;
+}
+
+.delta-chip--better {
+  color: var(--good);
+  background: var(--good-soft);
+  border-color: transparent;
+}
+
 .route-card__duration {
-  font-size: 19px;
+  font-size: calc(19 / 16 * 1rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -395,18 +589,28 @@ button {
 }
 
 .route-card__started {
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
   white-space: nowrap;
 }
 
+.route-card__estimate {
+  font-weight: 600;
+}
+
+.route-card__estimate-note {
+  margin-top: 4px;
+}
+
 .route-card__stats {
-  flex: 1;
-  min-width: 0;
+  /* A real minimum width, so on a narrow card the stats wrap onto their own
+     line instead of being squeezed to nothing under the load badge. */
+  flex: 1 1 9rem;
+  min-width: min-content;
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
 }
 
 .route-card__stat {
@@ -439,7 +643,7 @@ button {
   gap: 5px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 500;
   background: var(--bg-soft);
   color: var(--text);
@@ -476,7 +680,7 @@ button {
 
 .route-card__load-note {
   margin: 0 16px 10px;
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
 }
 
@@ -488,6 +692,11 @@ button {
   color: var(--info);
 }
 
+.route-card__load-note--free-transfer {
+  color: var(--good);
+  font-weight: 500;
+}
+
 .route-card__footer {
   display: flex;
   border-top: 1px solid var(--line);
@@ -496,11 +705,12 @@ button {
 .route-card__toggle,
 .route-card__map-button {
   flex: 1;
+  min-height: 44px;
   padding: 10px 0;
   border: none;
   background: transparent;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5 / 16 * 1rem);
   font-weight: 500;
   text-align: center;
 }
@@ -543,6 +753,7 @@ button {
 .leg-row {
   display: flex;
   gap: 10px;
+  min-height: 44px;
   padding: 8px 6px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -560,7 +771,7 @@ button {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  font-size: 13px;
+  font-size: calc(13 / 16 * 1rem);
   background: var(--leg-tone);
   box-shadow: var(--shadow-sm);
 }
@@ -573,11 +784,12 @@ button {
 .leg-row__head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 2px 8px;
 }
 
 .leg-row__title {
-  flex: 1;
+  flex: 1 1 8rem;
   min-width: 0;
   display: flex;
   align-items: baseline;
@@ -586,17 +798,17 @@ button {
 }
 
 .leg-row__title strong {
-  font-size: 13.5px;
+  font-size: calc(13.5 / 16 * 1rem);
   color: var(--text);
 }
 
 .leg-row__sub {
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
 }
 
 .leg-row__alert {
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
 }
 
 .leg-row__times {
@@ -604,7 +816,7 @@ button {
   align-items: baseline;
   gap: 8px;
   flex: none;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -615,15 +827,20 @@ button {
   color: var(--text);
 }
 
+.leg-row__est {
+  font-size: calc(12 / 16 * 1rem);
+  color: var(--muted);
+}
+
 .leg-row__walkmeta {
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
   flex: none;
 }
 
 .leg-row__path {
   margin: 3px 0 0;
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -650,7 +867,7 @@ button {
 .leg-detail__key {
   flex: none;
   width: 100px;
-  font-size: 10.5px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 600;
   color: var(--faint);
   padding-top: 2px;
@@ -659,13 +876,13 @@ button {
 .leg-detail__value {
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: calc(12.5 / 16 * 1rem);
   color: var(--text);
 }
 
 .leg-detail__note {
   margin: 0;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
 }
 
@@ -675,7 +892,7 @@ button {
 
 .leg-detail__source {
   margin: 0;
-  font-size: 10.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--faint);
 }
 
@@ -700,7 +917,7 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--text);
 }
 
@@ -745,7 +962,7 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  font-size: 10.5px;
+  font-size: calc(12 / 16 * 1rem);
   text-align: center;
 }
 
@@ -784,7 +1001,7 @@ button {
   gap: 6px;
   padding: 4px 11px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 600;
   border: 1px solid transparent;
   color: var(--tone, var(--muted));
@@ -794,7 +1011,7 @@ button {
 
 .load-badge--sm {
   padding: 2px 8px;
-  font-size: 10.5px;
+  font-size: calc(12 / 16 * 1rem);
 }
 
 .load-badge__dot {
@@ -835,7 +1052,7 @@ button {
   gap: 5px;
   padding: 3px 8px;
   border-radius: 7px;
-  font-size: 11px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   border: 1px solid transparent;
@@ -859,7 +1076,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -894,38 +1111,104 @@ button {
   background: var(--bg-soft);
 }
 
-.map-view__tools {
+.map-legend {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 500;
-  display: flex;
-  gap: 2px;
-  padding: 4px;
+  max-width: 190px;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
-.map-style__button {
+.map-legend__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 10px;
   border: none;
   background: transparent;
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 500;
-  padding: 6px 10px;
-  border-radius: 7px;
+  color: var(--text);
+  font-size: calc(12 / 16 * 1rem);
+  font-weight: 600;
 }
 
-.map-style__button:hover {
-  background: var(--surface-hover);
+.map-legend.is-collapsed .map-legend__toggle {
+  border-bottom: none;
+}
+
+.map-legend:not(.is-collapsed) .map-legend__toggle {
+  border-bottom: 1px solid var(--line);
+}
+
+.map-legend__list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--text);
 }
 
-.map-style__button.is-active {
-  color: var(--on-accent);
-  background: var(--accent);
+.map-legend__list li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.map-legend__swatch {
+  flex: none;
+  width: 20px;
+  height: 0;
+  border-top-width: 3px;
+  border-top-style: solid;
+}
+
+.map-legend__swatch--line {
+  border-top-color: var(--mrt);
+}
+
+.map-legend__swatch--walk {
+  border-top-color: var(--walk);
+  border-top-style: dashed;
+}
+
+.map-legend__swatch--baseline {
+  border-top-color: #5f6368;
+  border-top-style: dashed;
+  border-top-width: 2px;
+}
+
+.map-legend__swatch--affected {
+  border-top-color: var(--busy);
+  border-top-style: dotted;
+  border-top-width: 3px;
+}
+
+.map-warning-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.map-warning {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--busy);
+  color: #ffffff;
+  font-size: calc(12 / 16 * 1rem);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px #ffffff;
 }
 
 .map-view__hint {
@@ -941,7 +1224,7 @@ button {
   border-radius: 999px;
   background: var(--surface);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: calc(12.5 / 16 * 1rem);
   box-shadow: var(--shadow-md);
 }
 
@@ -950,12 +1233,17 @@ button {
 }
 
 .map-view__hint-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
   border: 1px solid var(--line-strong);
   background: transparent;
   color: var(--muted);
   border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 11.5px;
+  padding: 3px 14px;
+  font-size: calc(12 / 16 * 1rem);
 }
 
 .map-view__hint-cancel:hover {
@@ -970,7 +1258,7 @@ button {
   height: 26px;
   border-radius: 50% 50% 50% 4px;
   transform: rotate(-45deg);
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
   color: #ffffff;
   box-shadow: var(--shadow-md);
   border: 2px solid #ffffff;
@@ -997,7 +1285,9 @@ button {
   background: var(--surface) !important;
   border: 1px solid var(--line) !important;
   color: var(--text) !important;
-  font: 11.5px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-size: calc(12 / 16 * 1rem) !important;
+  line-height: 1.4 !important;
   border-radius: 8px !important;
   box-shadow: var(--shadow-sm) !important;
 }
@@ -1013,7 +1303,7 @@ button {
 .leaflet-control-attribution {
   background: rgba(255, 255, 255, 0.85) !important;
   color: var(--muted) !important;
-  font-size: 10px !important;
+  font-size: calc(12 / 16 * 1rem) !important;
 }
 
 .leaflet-control-attribution a {
@@ -1043,13 +1333,13 @@ button {
 }
 
 .empty__icon {
-  font-size: 34px;
+  font-size: calc(34 / 16 * 1rem);
   margin-bottom: 6px;
 }
 
 .empty h2 {
   margin: 0 0 14px;
-  font-size: 16px;
+  font-size: calc(16 / 16 * 1rem);
   font-weight: 600;
   color: var(--text);
 }
@@ -1064,7 +1354,7 @@ button {
   max-width: 420px;
   text-align: left;
   counter-reset: step;
-  font-size: 13.5px;
+  font-size: calc(13.5 / 16 * 1rem);
   color: var(--muted);
 }
 
@@ -1083,7 +1373,7 @@ button {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 700;
   color: var(--on-accent);
   background: var(--accent);
@@ -1094,12 +1384,16 @@ button {
 }
 
 .empty__try {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   padding: 9px 18px;
   border-radius: 999px;
   border: 1px solid var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 13px;
+  font-size: calc(13 / 16 * 1rem);
   font-weight: 600;
 }
 
@@ -1180,6 +1474,11 @@ button {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  border-radius: 2px;
+  /* A second, larger halo behind the outline so focus stays visible on
+     small/round controls (icon buttons, dots) and on busy backgrounds like
+     the map, not just a thin 2px ring. */
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1206,6 +1505,7 @@ button {
   display: flex;
   align-items: stretch;
   gap: 8px;
+  min-height: 44px;
   padding: 9px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-strong);
@@ -1227,7 +1527,7 @@ button {
 .place-input__icon {
   flex: none;
   align-self: center;
-  font-size: 15px;
+  font-size: calc(15 / 16 * 1rem);
   color: var(--muted);
 }
 
@@ -1243,7 +1543,7 @@ button {
 }
 
 .place-input__label {
-  font-size: 10px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 600;
   color: var(--faint);
 }
@@ -1265,13 +1565,13 @@ button {
 .place-input__locate {
   flex: none;
   align-self: center;
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--muted);
-  font-size: 14px;
+  font-size: calc(14 / 16 * 1rem);
   display: grid;
   place-items: center;
 }
@@ -1284,7 +1584,7 @@ button {
 
 .place-input__meta {
   margin: 6px 2px 0;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
   display: flex;
   gap: 8px;
@@ -1299,7 +1599,7 @@ button {
 
 .place-input__error {
   margin: 6px 2px 0;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--busy);
 }
 
@@ -1322,7 +1622,7 @@ button {
 
 .place-input__status {
   padding: 8px 10px;
-  font-size: 12.5px;
+  font-size: calc(12.5 / 16 * 1rem);
   color: var(--muted);
 }
 
@@ -1344,12 +1644,12 @@ button {
 }
 
 .place-input__option strong {
-  font-size: 13px;
+  font-size: calc(13 / 16 * 1rem);
   font-weight: 600;
 }
 
 .place-input__option span {
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
 }
 
@@ -1368,13 +1668,13 @@ button {
 .planner__swap {
   align-self: center;
   margin-top: 18px;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 1px solid var(--line-strong);
   background: var(--surface);
   color: var(--muted);
-  font-size: 15px;
+  font-size: calc(15 / 16 * 1rem);
   display: grid;
   place-items: center;
 }
@@ -1401,19 +1701,20 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
   font-weight: 600;
   color: var(--muted);
 }
 
 .control-group__hint {
   margin: 0;
-  font-size: 11.5px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--faint);
 }
 
 .control-group__datetime {
   width: 100%;
+  min-height: 44px;
   padding: 9px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-strong);
@@ -1438,12 +1739,16 @@ button {
 }
 
 .segmented__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   padding: 6px 14px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5 / 16 * 1rem);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1466,12 +1771,15 @@ button {
 }
 
 .chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   padding: 7px 14px;
   border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5 / 16 * 1rem);
   font-weight: 500;
 }
 
@@ -1492,13 +1800,75 @@ button {
   border-color: transparent;
 }
 
+.demo-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.demo-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.demo-switch__track {
+  flex: none;
+  position: relative;
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  transition: background 0.15s ease;
+}
+
+.demo-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease;
+}
+
+.demo-switch input:checked + .demo-switch__track {
+  background: var(--busy);
+}
+
+.demo-switch input:checked + .demo-switch__track .demo-switch__thumb {
+  transform: translateX(16px);
+}
+
+.demo-switch input:focus-visible + .demo-switch__track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.demo-switch__label {
+  font-size: calc(12.5 / 16 * 1rem);
+  color: var(--text);
+  font-weight: 500;
+}
+
 .planner__submit {
+  min-height: 48px;
   padding: 12px 18px;
   border-radius: var(--radius-sm);
   border: none;
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 14px;
+  font-size: calc(14 / 16 * 1rem);
   font-weight: 600;
 }
 
@@ -1513,7 +1883,7 @@ button {
 
 .planner__hint {
   margin: 0;
-  font-size: 12px;
+  font-size: calc(12 / 16 * 1rem);
   color: var(--muted);
 }
 
@@ -1522,35 +1892,414 @@ button {
 }
 
 /* ------------------------------------------------------------------ *
+ * Offline / stale data
+ *
+ * Live crowd data that can no longer be trusted as live (no signal, or old)
+ * is greyed out, not faded: opacity would drop the text below the 4.5:1
+ * contrast floor. It also changes shape (hollow dots, dashed outlines) and
+ * carries a text age label, so it never depends on colour alone.
+ * ------------------------------------------------------------------ */
+
+.app__offline {
+  flex: none;
+  margin: 8px max(20px, var(--safe-right)) 0 max(20px, var(--safe-left));
+}
+
+.banner--offline {
+  border: 1px solid var(--moderate);
+  background: var(--moderate-soft);
+}
+
+.load-badge.is-stale,
+.arrival-pill.is-stale {
+  background: transparent;
+  color: var(--muted);
+  border-style: dashed;
+  border-color: var(--line-strong);
+}
+
+.load-badge.is-stale .load-badge__dot {
+  background: transparent;
+  border: 2px solid var(--faint);
+}
+
+.load-badge__age {
+  font-weight: 500;
+  font-style: italic;
+}
+
+.results--stale .leg-chip__dot,
+.results--stale .station-strip__dot,
+.results--stale .stops-list__dot {
+  background: transparent;
+  border: 2px solid var(--faint);
+  box-shadow: none;
+}
+
+.results--stale .load-meter__fill {
+  background: var(--faint);
+}
+
+.results__stale {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 4px solid var(--moderate);
+  border-radius: var(--radius-sm);
+  background: var(--moderate-soft);
+  font-size: calc(12.5 / 16 * 1rem);
+  color: var(--text);
+}
+
+.results__saved {
+  margin: 4px 0 0;
+  font-size: calc(12 / 16 * 1rem);
+  color: var(--muted);
+}
+
+.results__stale-action {
+  min-height: 44px;
+  margin-left: 8px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--accent-hover);
+  font-size: calc(12.5 / 16 * 1rem);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.results__stale-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------ *
+ * "Today" card (saved usual trip)
+ * ------------------------------------------------------------------ */
+
+.today {
+  flex: none;
+  max-height: 55vh;
+  max-height: 55dvh;
+  overflow-y: auto;
+  padding: 8px max(20px, var(--safe-right)) 4px max(20px, var(--safe-left));
+}
+
+.today__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.today__bar--prominent {
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-width: 1px 1px 1px 5px;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.today__bar--disruption.today__bar--prominent {
+  border-color: var(--moderate);
+  background: var(--moderate-soft);
+}
+
+.today__icon {
+  flex: none;
+  font-size: calc(18 / 16 * 1rem);
+  line-height: 1.3;
+}
+
+.today__text {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.today__tag {
+  display: block;
+  font-size: calc(12 / 16 * 1rem);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.today__headline {
+  margin: 0;
+  font-size: calc(14 / 16 * 1rem);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.today__bar--prominent .today__headline {
+  font-size: calc(15 / 16 * 1rem);
+  font-weight: 700;
+}
+
+.today__reason {
+  margin: 4px 0 0;
+  font-size: calc(12.5 / 16 * 1rem);
+  color: var(--muted);
+}
+
+.today__why summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: calc(12.5 / 16 * 1rem);
+  font-weight: 600;
+  color: var(--accent-hover);
+  cursor: pointer;
+}
+
+.today__why[open] summary {
+  min-height: 32px;
+}
+
+.today__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.today__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: calc(13 / 16 * 1rem);
+  font-weight: 600;
+}
+
+.today__button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.today__button--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.today__button--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.today__button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.today__link {
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent-hover);
+  font-size: calc(12.5 / 16 * 1rem);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.today__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.today__panel-title {
+  margin: 0;
+  font-size: calc(15 / 16 * 1rem);
+}
+
+.today__trip {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.today__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.today__privacy {
+  margin: 0;
+  font-size: calc(12 / 16 * 1rem);
+  color: var(--muted);
+}
+
+.today__panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------------ *
  * Responsive
  * ------------------------------------------------------------------ */
 
 @media (max-width: 960px) {
-  body {
-    overflow: auto;
-  }
-
-  .app {
-    height: auto;
-    min-height: 100vh;
-  }
+  /*
+   * Mobile, one-handed layout: the map fills the whole area below the
+   * header, and a draggable bottom sheet (BottomSheet.jsx) floats over it
+   * holding the planner form and results - primary actions live in the
+   * bottom half of the screen, within thumb reach, instead of requiring a
+   * scroll to the top of a stacked page. Nothing at the body level scrolls
+   * any more; only the sheet's own content does.
+   */
 
   .app__main {
-    grid-template-columns: 1fr;
+    display: block;
+    position: relative;
   }
 
   .app__map-pane {
-    order: -1;
-    height: 44vh;
-    border-bottom: 1px solid var(--line);
+    position: absolute;
+    inset: 0;
+    height: auto;
+    border: none;
+  }
+
+  /* A phone has no room for a tall header and stacked banners above the map:
+     the header is one slim row (the connection-status pills are developer
+     diagnostics, hidden here; "Offline" is a separate pill and stays), the
+     alerts are one tappable line, and an opened list scrolls in a capped box. */
+  .app__header {
+    flex-wrap: nowrap;
+    padding-top: max(6px, var(--safe-top));
+    padding-bottom: 6px;
+  }
+
+  .app__subtitle,
+  .app__diagnostics {
+    display: none;
   }
 
   .app__alerts {
-    margin: 10px 12px 0;
+    margin: 8px max(8px, var(--safe-right)) 0 max(8px, var(--safe-left));
+    padding: 0 8px 0 12px;
+    align-items: center;
+    max-height: 40vh;
+    max-height: 40dvh;
+    overflow-y: auto;
   }
 
-  .app__panel {
-    padding: 12px 12px 24px;
+  .app__alerts-detail {
+    padding-bottom: 8px;
+  }
+
+  .app__offline {
+    padding: 8px 12px;
+  }
+
+  .today__bar:not(.today__bar--prominent) .today__tag {
+    display: none;
+  }
+
+  .today__button {
+    padding: 6px 12px;
+  }
+
+  /* Three-option segmented controls (e.g. the travel-time allowance) were wider than a phone. */
+  .segmented {
+    display: flex;
+  }
+
+  .segmented__item {
+    flex: 1;
+    padding: 6px 8px;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .today {
+    padding-left: max(8px, var(--safe-left));
+    padding-right: max(8px, var(--safe-right));
+  }
+
+  .app__offline {
+    margin: 8px max(8px, var(--safe-right)) 0 max(8px, var(--safe-left));
+  }
+
+  .app__footer {
+    display: none;
+  }
+
+  /* Anchored inside .app__main (position: relative here), so it is bounded by
+     the map area and never covers the header, "Today" card or banners. */
+  .sheet {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 400;
+    height: var(--sheet-height, 42%);
+    max-height: 100%;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgba(60, 64, 67, 0.25);
+    transition: height 0.25s cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .sheet--dragging {
+    transition: none;
+  }
+
+  /* The map's bottom corner holds the OpenStreetMap attribution, which must
+     stay visible: lift it above the bottom sheet (BottomSheet.jsx publishes
+     its height as --sheet-offset), following it as it moves. */
+  .app__map-pane .leaflet-bottom {
+    bottom: var(--sheet-offset, 0px);
+    transition: bottom 0.25s cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .sheet__handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 100%;
+    min-height: 44px;
+    padding: 12px 0;
+    border: none;
+    background: transparent;
+    touch-action: none;
+  }
+
+  .sheet__grip {
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--line-strong);
+  }
+
+  .sheet .app__panel {
+    flex: 1;
+    min-height: 0;
+    touch-action: pan-y;
+    padding: 0 max(16px, var(--safe-right)) max(16px, var(--safe-bottom)) max(16px, var(--safe-left));
   }
 
   .planner__places {
@@ -1559,10 +2308,5 @@ button {
 
   .planner__swap {
     display: none;
-  }
-
-  .app__footer {
-    flex-direction: column;
-    gap: 4px;
   }
 }

@@ -33,6 +33,17 @@ export function stationLabel(name, code) {
   return formatted || code || '';
 }
 
+/**
+ * Milliseconds since the epoch from a leg/route time, or null. Routing sources
+ * disagree on the format: ISO strings (LTA-native planner, Google) versus epoch
+ * milliseconds (OneMap), and `Date.parse` on a bare number returns NaN.
+ */
+export function parseTimeMs(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const time = typeof value === 'number' || /^\d{10,}$/.test(String(value)) ? Number(value) : Date.parse(value);
+  return Number.isFinite(time) ? time : null;
+}
+
 export function titleCase(rawText) {
   return formatStopName(rawText);
 }

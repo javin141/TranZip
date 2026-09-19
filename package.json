@@ -5,7 +5,7 @@
   "description": "TranZip - Singapore public transport journey planner with live bus and MRT passenger load, powered by LTA DataMall and OneMap.",
   "type": "module",
   "engines": {
-    "node": ">=18.17"
+    "node": ">=22"
   },
   "scripts": {
     "dev": "concurrently -k -n server,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
@@ -14,7 +14,7 @@
     "build": "vite build",
     "start": "node server/index.js",
     "preview": "npm run build && node server/index.js",
-    "test": "node --test server/tests/"
+    "test": "node --import ./server/tests/no-network.setup.js --test \"server/tests/*.test.js\" \"src/lib/*.test.js\""
   },
   "dependencies": {
     "cors": "^2.8.5",

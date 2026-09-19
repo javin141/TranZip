@@ -1,0 +1,25 @@
+{
+  "name": "TranZip - Singapore Journey Planner",
+  "short_name": "TranZip",
+  "description": "Load-aware bus + MRT/LRT journey planning for Singapore, with live disruption rerouting and weather-aware routing.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f1f3f4",
+  "theme_color": "#1a73e8",
+  "icons": [
+    {
+      "src": "/icon.jpg",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.jpg",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
+      "purpose": "maskable"
+    }
+  ]
+}

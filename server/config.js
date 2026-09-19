@@ -35,11 +35,17 @@ export const config = {
     crowdForecast: asInt(process.env.CACHE_TTL_CROWD_FORECAST_MS, 30 * 60 * 1000),
     alerts: asInt(process.env.CACHE_TTL_ALERTS_MS, 60000),
     route: asInt(process.env.CACHE_TTL_ROUTE_MS, 45000),
+    window: asInt(process.env.CACHE_TTL_WINDOW_MS, 45000),
     weather: asInt(process.env.CACHE_TTL_WEATHER_MS, 5 * 60 * 1000),
     placeSearch: 5 * 60 * 1000,
     stationName: 24 * 60 * 60 * 1000,
   },
   requestTimeoutMs: asInt(process.env.REQUEST_TIMEOUT_MS, 20000),
+  // Gates the in-app "Demo: simulate NEL disruption" toggle entirely - the
+  // toggle is never sent to the browser, and the activation endpoint refuses
+  // to do anything, unless this is set. Off by default so a real deployment
+  // never accidentally ships with a fake-disruption switch in the UI.
+  demoMode: process.env.DEMO_MODE === '1',
 };
 
 export function integrationStatus() {

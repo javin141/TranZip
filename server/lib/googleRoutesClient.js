@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { createCache, memoize } from './cache.js';
+import { spendUpstreamCall } from './callBudget.js';
 import { UpstreamError } from './http.js';
 import { decodePolyline } from './polyline.js';
 import { formatStopName } from './format.js';
@@ -553,6 +554,7 @@ export async function computeGoogleTransitRoutes({
         'routes.legs.steps.transitDetails',
       ].join(',');
 
+      spendUpstreamCall();
       const res = await fetch(url, {
         method: 'POST',
         headers: {

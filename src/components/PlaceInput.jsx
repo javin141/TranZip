@@ -22,6 +22,7 @@ export function PlaceInput({
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
   const containerRef = useRef(null);
+  const inputRef = useRef(null);
   const listId = useId();
 
   const { results, loading, error } = usePlaceSearch(text);
@@ -40,6 +41,27 @@ export function PlaceInput({
     document.addEventListener('mousedown', handleDocumentClick);
     return () => document.removeEventListener('mousedown', handleDocumentClick);
   }, []);
+
+  // Keyboard avoidance: the soft keyboard shrinks the visual viewport on
+  // mobile, which can leave a focused input hidden behind it (especially
+  // inside the bottom sheet's own scroll container). Re-center the input
+  // whenever that happens, not just once on focus, since the keyboard
+  // animates in over ~250ms and visualViewport tells us when it actually
+  // finished rather than requiring a guessed timeout.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return undefined;
+    const handleViewportResize = () => {
+      if (document.activeElement === inputRef.current) scrollInputIntoView();
+    };
+    viewport.addEventListener('resize', handleViewportResize);
+    return () => viewport.removeEventListener('resize', handleViewportResize);
+  }, []);
+
+  function scrollInputIntoView() {
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    inputRef.current?.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+  }
 
   const commit = (point) => {
     onChange(point);
@@ -117,6 +139,7 @@ export function PlaceInput({
           <label className="place-input__label" htmlFor={`${listId}-input`}>{label}</label>
           <input
             id={`${listId}-input`}
+            ref={inputRef}
             className="place-input__control"
             value={text}
             placeholder={placeholder}
@@ -131,7 +154,14 @@ export function PlaceInput({
               setOpen(true);
               setHighlight(-1);
             }}
-            onFocus={() => setOpen(true)}
+            onFocus={() => {
+              setOpen(true);
+              // Immediate attempt (helps when there's no keyboard to wait
+              // for, e.g. a hardware keyboard or desktop); the
+              // visualViewport listener above handles the mobile keyboard's
+              // own animation timing.
+              scrollInputIntoView();
+            }}
             onKeyDown={handleKeyDown}
           />
         </div>

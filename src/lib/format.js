@@ -8,6 +8,21 @@ export function formatMinutes(minutes) {
   return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
 }
 
+/**
+ * `28–35 min` for a `{ minMinutes, maxMinutes }` range; a single value when
+ * both ends round to the same minute. Falls back to the plain point estimate
+ * when the server sent no range.
+ */
+export function formatMinutesRange(range, fallbackMinutes = 0) {
+  if (!range || !Number.isFinite(range.minMinutes) || !Number.isFinite(range.maxMinutes)) {
+    return formatMinutes(fallbackMinutes);
+  }
+  const { minMinutes, maxMinutes } = range;
+  if (minMinutes === maxMinutes) return formatMinutes(minMinutes);
+  if (maxMinutes < 60) return `${minMinutes}–${maxMinutes} min`;
+  return `${formatMinutes(minMinutes)} – ${formatMinutes(maxMinutes)}`;
+}
+
 export function formatClock(isoString) {
   if (!isoString) return '--:--';
   const date = new Date(isoString);
@@ -36,6 +51,17 @@ export function formatArrivalMinutes(minutes) {
 export function formatCoordinates(point) {
   if (!point) return '';
   return `${Number(point.latitude).toFixed(5)}, ${Number(point.longitude).toFixed(5)}`;
+}
+
+/** `20:06` for today, `18 Sep, 20:06` otherwise - for the alerts banner's message list. */
+export function formatAlertTime(dateString) {
+  if (!dateString) return '';
+  const date = new Date(String(dateString).replace(' ', 'T'));
+  if (Number.isNaN(date.getTime())) return '';
+  const time = date.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (date.toDateString() === new Date().toDateString()) return time;
+  const day = date.toLocaleDateString('en-SG', { day: '2-digit', month: 'short' });
+  return `${day}, ${time}`;
 }
 
 export function relativeTime(isoString) {

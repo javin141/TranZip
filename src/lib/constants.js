@@ -1,6 +1,6 @@
 /**
  * Shared front-end configuration: the fixed rule set from the product brief,
- * OneMap basemap presets and the load-band palette.
+ * the OSM basemap tile source and the load-band palette.
  */
 
 /** Recommendation tolerance: routes within this share of the fastest time are compared by load. */
@@ -32,14 +32,21 @@ export const MODE_OPTIONS = [
 
 export const DEFAULT_MODES = ['TRANSIT', 'BUS', 'RAIL'];
 
-/** OneMap basemap styles (key-less tile endpoints documented in /apidocs/maps). */
-export const BASEMAP_STYLES = [
-  { value: 'Default', label: 'Default', path: 'default' },
-  { value: 'Grey', label: 'Grey', path: 'grey' },
-  { value: 'Night', label: 'Night', path: 'night' },
-  { value: 'Original', label: 'Original', path: 'original' },
-];
+/**
+ * OpenStreetMap basemap tiles, no API key needed. Configurable via
+ * VITE_TILE_URL / VITE_TILE_ATTRIBUTION (see .env.example) so another
+ * OSM-based provider (CARTO, MapTiler, Stadia, a self-hosted tile server...)
+ * can be swapped in without a code change - useful if traffic ever outgrows
+ * the OSM Foundation's tile usage policy, which is meant for light use.
+ * The "(c) OpenStreetMap contributors" credit must stay on the map.
+ */
+export const TILE_URL = import.meta.env.VITE_TILE_URL
+  || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
+export const TILE_ATTRIBUTION = import.meta.env.VITE_TILE_ATTRIBUTION
+  || '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors';
+
+/** OneMap is still credited separately - place search, routing and reverse geocoding still call OneMap's API. */
 export const ONEMAP_ATTRIBUTION = '&copy; <a href="https://www.onemap.gov.sg" target="_blank" rel="noreferrer">OneMap</a> &copy; Singapore Land Authority';
 
 /**
@@ -48,12 +55,17 @@ export const ONEMAP_ATTRIBUTION = '&copy; <a href="https://www.onemap.gov.sg" ta
  * good/moderate/busy/unknown) - a prior version of this table was keyed by
  * band name instead (seats/standing/limited), which silently never matched
  * and left every crowd indicator rendering as "unknown" grey.
+ *
+ * All four colours are checked at >=4.5:1 contrast against white (WCAG AA
+ * for normal text) since they're used as text, not just fills - the
+ * "unknown" grey originally used Google's usual #80868b, which is only
+ * ~3.7:1 and fails.
  */
 export const LOAD_TONES = {
   good: { colour: '#188038', soft: '#e6f4ea' },
   moderate: { colour: '#b06000', soft: '#fef7e0' },
   busy: { colour: '#c5221f', soft: '#fce8e6' },
-  unknown: { colour: '#80868b', soft: '#f1f3f4' },
+  unknown: { colour: '#5f6368', soft: '#f1f3f4' },
 };
 
 export function toneForBand(band) {
@@ -98,15 +110,18 @@ export const RAIL_LINE_COLOURS = {
 };
 
 /**
- * Same palette, but with the Circle/Marina Bay Line's brand orange darkened
- * for use as actual text - #fa9e0d is only ~2:1 contrast on white, well
- * under the ~4.5:1 needed to read reliably. Every other line's brand colour
- * is already dark enough on its own.
+ * Same palette, but with brand colours that are too light to read reliably
+ * as text darkened to pass WCAG AA (4.5:1 on white): Circle/Marina Bay
+ * Line's orange (#fa9e0d, ~2:1) and the LRT grey (#7c8087, ~4:1, close but
+ * short). Every other line's brand colour already clears 4.5:1 on its own.
  */
 const RAIL_LINE_TEXT_COLOURS = {
   ...RAIL_LINE_COLOURS,
   CCL: '#a15d00',
   CEL: '#a15d00',
+  BPL: '#5f6368',
+  SLRT: '#5f6368',
+  PLRT: '#5f6368',
 };
 
 /** True brand colour - for solid swatches (map polylines, marker dots/circles). */

@@ -6,6 +6,7 @@ import { hasGoogleRoutesKey } from '../lib/googleRoutesClient.js';
 import { config, integrationStatus } from '../config.js';
 import { CROWD_API_LINES, RAIL_LINES } from '../lib/railLines.js';
 import { LOAD_BANDS } from '../lib/loadModel.js';
+import { getDemoDisruptionActive, isDemoModeAvailable, setDemoDisruptionActive } from '../lib/disruptions.js';
 
 export const systemRouter = Router();
 
@@ -51,6 +52,12 @@ systemRouter.get('/health', async (_req, res) => {
       oneMapTokenUsable: hasOneMapToken(),
       ltaConfigured: Boolean(config.lta.accountKey),
     },
+    // Only ever true when DEMO_MODE=1 is set server-side - the UI must hide
+    // the demo toggle entirely when this is false, not just disable it.
+    demo: {
+      available: isDemoModeAvailable(),
+      disruptionActive: getDemoDisruptionActive(),
+    },
     loadScale: Object.values(LOAD_BANDS).map((band) => ({
       key: band.key,
       label: band.label,
@@ -72,4 +79,17 @@ systemRouter.get('/health', async (_req, res) => {
       tolerancePercent: 10,
     },
   });
+});
+
+/**
+ * POST /api/system/demo-disruption - toggles the "Demo: simulate NEL
+ * disruption" fixture on/off at runtime (server/data/test-overrides.js has
+ * the fixture content). A no-op that always reports `available: false` when
+ * DEMO_MODE isn't set server-side, even if called directly - the UI hides
+ * the switch entirely in that case, but this is the second line of defence.
+ */
+systemRouter.post('/demo-disruption', (req, res) => {
+  const available = isDemoModeAvailable();
+  const active = available ? setDemoDisruptionActive(Boolean(req.body?.enabled)) : false;
+  res.json({ available, active });
 });

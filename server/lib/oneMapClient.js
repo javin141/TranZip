@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import { buildUrl, decodeJwtExpiry, requestJson, UpstreamError } from './http.js';
 import { createCache, memoize } from './cache.js';
+import { spendUpstreamCall } from './callBudget.js';
 
 const CACHE = {
   search: createCache('onemap:search'),
@@ -83,6 +84,7 @@ async function currentToken({ forceRefresh = false } = {}) {
     loader: async () => {
       const url = buildUrl(config.oneMap.baseUrl, '/auth/post/getToken');
       // OneMap expects a JSON body here; the old urlencoded form now gets 404.
+      spendUpstreamCall();
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },

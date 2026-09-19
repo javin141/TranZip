@@ -20,6 +20,9 @@ export function PlannerForm({
   weather,
   avoidWeather,
   onToggleAvoidWeather,
+  demoAvailable,
+  demoDisruptionOn,
+  onToggleDemoDisruption,
   onPlan,
   planning,
   disabled,
@@ -148,6 +151,29 @@ export function PlannerForm({
             >
               {weatherLabel}
             </button>
+          </div>
+        )}
+
+        {demoAvailable && (
+          <div className="control-group control-group--demo">
+            <span className="control-group__label">Demo</span>
+            <label className="demo-switch">
+              <input
+                type="checkbox"
+                checked={Boolean(demoDisruptionOn)}
+                onChange={onToggleDemoDisruption}
+              />
+              <span className="demo-switch__track" aria-hidden="true">
+                <span className="demo-switch__thumb" />
+              </span>
+              <span className="demo-switch__label">Demo: simulate NEL disruption (Punggol area)</span>
+            </label>
+            {demoDisruptionOn && (
+              <p className="control-group__hint">
+                [SIMULATED] A fake North East Line disruption is live for every user of this server right now -
+                turn it off when you're done.
+              </p>
+            )}
           </div>
         )}
 

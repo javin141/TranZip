@@ -6,8 +6,8 @@ import {
   getBusStop,
   getCrowdForecast,
   getCrowdRealTime,
-  getTrainServiceAlerts,
 } from '../lib/ltaClient.js';
+import { getTrainServiceAlertsForDisplay } from '../lib/disruptions.js';
 import { bandFromBusLoad, bandFromCrowdLevel, busTypeInfo, isLiveWindow } from '../lib/loadModel.js';
 import { RAIL_LINES, isStationCode, lineForStationCode, lineMeta } from '../lib/railLines.js';
 import { lineStationCodes, loadStationCatalog, stationDetails, stationNameMap } from '../lib/stationCatalog.js';
@@ -162,10 +162,14 @@ loadsRouter.get('/station/:code', async (req, res, next) => {
   }
 });
 
-/** GET /api/loads/alerts - whole-network MRT/LRT service alerts. */
+/**
+ * GET /api/loads/alerts - whole-network MRT/LRT service alerts. Reflects the
+ * demo disruption toggle when it's on (`simulated: true`), so this banner
+ * never disagrees with what the journey planner is actually doing.
+ */
 loadsRouter.get('/alerts', async (_req, res, next) => {
   try {
-    const alerts = await getTrainServiceAlerts();
+    const alerts = await getTrainServiceAlertsForDisplay();
     return res.json(alerts);
   } catch (error) {
     return next(error);

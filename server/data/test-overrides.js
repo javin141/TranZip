@@ -1,51 +1,56 @@
 /**
- * DEV/TEST ONLY - hardcode fake live conditions here to exercise features
- * that are normally driven by real-world events (a train disruption, rain)
- * without waiting for the real thing to happen. Each override below has its
- * own `active` flag and can be toggled independently - turn on just one, or
- * both at once to see disruption rerouting and weather-aware ranking
- * interact.
- *
- * Every simulated response is clearly marked ("SIMULATED" source field,
- * "[SIMULATED]" prefix on the in-app warning banner) so it can never be
- * mistaken for the real thing. Restart the server after editing this file -
- * it's read once per request, but Node doesn't hot-reload.
- *
- * Remember to set `active: false` again when you're done testing - these
- * checks run on every request, so leaving one on affects the whole app.
+ * DEV/TEST ONLY - fixture content for features that are normally driven by
+ * real-world events (a train disruption, rain), so they can be demoed
+ * without waiting for the real thing to happen. Every simulated response is
+ * clearly marked ("SIMULATED" source field, "[SIMULATED]" prefix wherever it
+ * surfaces in the UI) so it can never be mistaken for the real thing.
  */
 
 /**
- * server/lib/disruptions.js - simulates a live LTA `/TrainServiceAlerts`
- * segment, so the disruption-aware rerouting actually triggers.
+ * server/lib/disruptions.js - the fake LTA `/TrainServiceAlerts` segment
+ * used when the demo disruption toggle is on (see below; DEMO_MODE=1 in
+ * .env gates the toggle, and it's a runtime switch in the UI now, not a
+ * flag you hand-edit here and restart the server for - see
+ * getDemoDisruptionActive/setDemoDisruptionActive in disruptions.js).
  *
- * Fields:
- *   Line     - one of NSL, EWL, CGL, NEL, CCL, CEL, DTL, TEL, BPL, SLRT, PLRT
- *              (server/lib/railLines.js has the full list)
- *   Stations - comma-separated station codes for the affected stretch.
- *              Look up real codes in server/lib/railNetwork.js (LINE_CHAINS)
- *              or by calling GET /api/loads/lines/<LINE>.
- *   Direction - free text, shown in the UI note (optional).
+ * Fields (mirroring LTA's real /TrainServiceAlerts shape):
+ *   Line              - one of NSL, EWL, CGL, NEL, CCL, CEL, DTL, TEL, BPL,
+ *                        SLRT, PLRT (server/lib/railLines.js has the full list)
+ *   Stations          - comma-separated station codes for the affected stretch.
+ *                        Look up real codes in server/lib/railNetwork.js
+ *                        (LINE_CHAINS) or by calling GET /api/loads/lines/<LINE>.
+ *   Direction         - free text, shown in the UI note (optional).
+ *   FreePublicBus     - comma-separated station codes where a free bus
+ *                        bridges the gap, or the literal string "Free bus
+ *                        service island wide" for a system-wide free bus.
+ *   FreeMRTShuttle    - comma-separated station codes served by a free MRT
+ *                        shuttle train, same "island wide" option.
+ *   MRTShuttleDirection - free text describing the shuttle's direction.
  *
- * Try it: the default below blocks Orchard/Somerset/Dhoby Ghaut on the
- * North-South Line. Plan a journey that would normally ride through that
- * stretch (e.g. Woodlands to Marina Bay) and the route should reroute via
- * another line, with a "Service alert" / "Rerouted" ribbon on the affected
- * route cards.
+ * Try it (matches the demo journey - Punggol to one-north): the default
+ * below blocks the North East Line between Punggol and Serangoon (Hougang -
+ * Buangkok - Sengkang), which is the exact stretch that trip's fastest route
+ * rides before transferring to the Circle Line, with a free shuttle bus
+ * offered at Hougang. Set DEMO_MODE=1 in .env, restart the server, then use
+ * the "Demo: simulate NEL disruption" switch in the app - plan Punggol ->
+ * one-north and the route should detour (via a bus + another line) instead
+ * of riding through the blocked stretch, with "Service alert" / "Rerouted"
+ * ribbons and a "Free bus available at Hougang" note on the affected cards.
  */
-export const disruptionOverride = {
-  active: false,
+export const demoDisruptionFixture = {
   segments: [
     {
-      Line: 'NSL',
-      Direction: 'Towards Marina South Pier',
-      Stations: 'NS22,NS23,NS24',
+      Line: 'NEL',
+      Direction: 'Towards HarbourFront',
+      Stations: 'NE14,NE15,NE16',
+      FreePublicBus: 'NE14',
+      FreeMRTShuttle: '',
+      MRTShuttleDirection: '',
     },
   ],
   messages: [
     {
-      content: 'TEST: simulated disruption on the North-South Line (Orchard - Dhoby Ghaut). '
-        + 'Set active:false in server/data/test-overrides.js to turn this off.',
+      content: 'Free bus service is available at Hougang while this disruption is in effect.',
       createdDate: new Date().toISOString(),
     },
   ],

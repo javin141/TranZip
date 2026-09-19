@@ -24,6 +24,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Reachability: every request reports whether it could connect at all, so the
+ * app can tell "no signal" from an ordinary error. A failed connection is
+ * `false`; any HTTP response (even a 4xx/5xx) proves the server was reached.
+ */
+const reachabilityListeners = new Set();
+
+export function subscribeReachability(listener) {
+  reachabilityListeners.add(listener);
+  return () => reachabilityListeners.delete(listener);
+}
+
+function reportReachability(reachable) {
+  for (const listener of reachabilityListeners) listener(reachable);
+}
+
 async function request(path, { method = 'GET', body, signal } = {}) {
   let response;
   try {
@@ -35,8 +51,10 @@ async function request(path, { method = 'GET', body, signal } = {}) {
     });
   } catch (error) {
     if (error.name === 'AbortError') throw error;
+    reportReachability(false);
     throw new ApiError('Cannot reach the TranZip API server. Is `npm run dev` running?', { kind: 'network' });
   }
+  reportReachability(true);
 
   const text = await response.text();
   let payload = null;
@@ -73,6 +91,8 @@ export const api = {
 
   planJourney: (payload, signal) => request('/journey/plan', { method: 'POST', body: payload, signal }),
 
+  journeyWindow: (payload, signal) => request('/journey/window', { method: 'POST', body: payload, signal }),
+
   lineLoads: (line, signal) => request(`/loads/lines/${encodeURIComponent(line)}`, { signal }),
 
   stationLoad: (code, signal) => request(`/loads/station/${encodeURIComponent(code)}`, { signal }),
@@ -80,6 +100,8 @@ export const api = {
   busStopLoads: (code, signal) => request(`/loads/bus-stop/${encodeURIComponent(code)}`, { signal }),
 
   serviceAlerts: (signal) => request('/loads/alerts', { signal }),
+
+  setDemoDisruption: (enabled, signal) => request('/system/demo-disruption', { method: 'POST', body: { enabled }, signal }),
 
   weatherNow: (latitude, longitude, signal) => request(
     `/weather/now?lat=${encodeURIComponent(latitude)}&lng=${encodeURIComponent(longitude)}`,

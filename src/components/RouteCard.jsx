@@ -1,5 +1,6 @@
-import { classNames, formatFare, formatMinutes, pluralise } from '../lib/format.js';
+import { classNames, formatFare, formatMinutes, formatMinutesRange, pluralise } from '../lib/format.js';
 import { lineSwatchColour, lineTextColour } from '../lib/constants.js';
+import { useFreshness } from '../lib/freshness.js';
 import { LoadBadge } from './LoadBadge.jsx';
 import { LegRow } from './LegTimeline.jsx';
 
@@ -31,6 +32,7 @@ function LegChip({ leg }) {
  */
 export function RouteCard({
   route,
+  baselineMinutes = null,
   expanded,
   onToggle,
   onSelect,
@@ -41,6 +43,8 @@ export function RouteCard({
   const isRecommended = Boolean(route.recommended);
   const rideLegs = route.legs.filter((leg) => leg.type === 'bus' || leg.type === 'mrt');
   const fare = formatFare(route.fare);
+  const deltaMinutes = typeof baselineMinutes === 'number' ? route.durationMinutes - baselineMinutes : null;
+  const { stale, asOfClock, ageLabel } = useFreshness();
 
   return (
     <article
@@ -60,15 +64,22 @@ export function RouteCard({
 
       {route.disrupted && (
         <p className="route-card__ribbon route-card__ribbon--warning">
-          <span className="route-card__ribbon-badge route-card__ribbon-badge--warning">Service alert</span>
+          <span className="route-card__ribbon-badge route-card__ribbon-badge--warning">
+            {route.disruptionSimulated ? '[SIMULATED] Service alert' : 'Service alert'}
+          </span>
           <span className="route-card__ribbon-text">This route passes through a live LTA service alert.</span>
         </p>
       )}
       {!route.disrupted && route.rerouted && (
         <p className="route-card__ribbon route-card__ribbon--info">
-          <span className="route-card__ribbon-badge route-card__ribbon-badge--info">Rerouted</span>
+          <span className="route-card__ribbon-badge route-card__ribbon-badge--info">
+            {route.disruptionSimulated ? '[SIMULATED] Rerouted' : 'Rerouted'}
+          </span>
           <span className="route-card__ribbon-text">Replanned to avoid a live service alert.</span>
         </p>
+      )}
+      {route.freeTransferNote && (
+        <p className="route-card__load-note route-card__load-note--free-transfer">🚏 {route.freeTransferNote}</p>
       )}
 
       <header className="route-card__header">
@@ -78,11 +89,32 @@ export function RouteCard({
           onClick={() => onToggle(route)}
           aria-expanded={expanded}
         >
-          <span className="route-card__duration">{formatMinutes(route.durationMinutes)}</span>
+          <span className="route-card__duration">{formatMinutesRange(route.durationRange, route.durationMinutes)}</span>
           <span className="route-card__started">
+            {route.durationRange && (
+              <>
+                <span className="route-card__estimate">
+                  {route.durationRange.simulated ? '[SIMULATED] estimate' : 'estimate'}
+                </span>
+                {' · '}
+              </>
+            )}
             {route.legs[0]?.departure ? `departs ${new Date(route.legs[0].departure).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false })}` : route.type}
           </span>
         </button>
+
+        {deltaMinutes !== null && (
+          <span
+            className={classNames(
+              'delta-chip',
+              deltaMinutes > 0 && 'delta-chip--worse',
+              deltaMinutes < 0 && 'delta-chip--better',
+            )}
+            title="Compared with the usual route before today's live service alert"
+          >
+            {deltaMinutes === 0 ? 'Same as usual' : `${deltaMinutes > 0 ? '+' : '−'}${Math.abs(deltaMinutes)} min vs usual`}
+          </span>
+        )}
 
         <div className="route-card__stats">
           <span className="route-card__stat">
@@ -115,6 +147,7 @@ export function RouteCard({
       </div>
 
       <p className="route-card__load-note">
+        {stale && <strong>{`Not live, as of ${asOfClock} (${ageLabel}): `}</strong>}
         {route.load?.summary}
         {route.load?.worstLeg && ` Busiest: ${route.load.worstLeg.label} (${route.load.worstLeg.band.label.toLowerCase()}).`}
         {route.load?.legsWithoutData > 0 && ` ${pluralise(route.load.legsWithoutData, 'leg')} without live data.`}
@@ -143,6 +176,14 @@ export function RouteCard({
           {selected ? 'Shown on map' : 'Show on map'}
         </button>
       </footer>
+
+      {expanded && route.durationRange && (
+        <p className="route-card__load-note route-card__load-note--muted route-card__estimate-note">
+          <strong>Time estimate: {formatMinutesRange(route.durationRange, route.durationMinutes)}</strong>
+          {` (typical ${formatMinutes(route.durationRange.typicalMinutes)}). ${route.durationRange.simulated ? '[SIMULATED] rain is assumed. ' : ''}`}
+          {route.durationRange.basis}
+        </p>
+      )}
 
       {expanded && (
         <ol className="leg-timeline">

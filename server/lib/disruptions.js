@@ -2,26 +2,76 @@
  * Turns LTA's `/TrainServiceAlerts` feed into the "what to avoid" shape the
  * rail pathfinder (`railNetwork.findRailPath`) and the journey planner can
  * consume directly, so a live disruption actually changes the routes
- * returned instead of only appearing in a banner.
+ * returned instead of only appearing in a banner. Also normalises the
+ * free-bus/free-shuttle fields so the UI can point commuters at them.
  */
+import { config } from '../config.js';
 import { getTrainServiceAlerts } from './ltaClient.js';
 import { isStationCode, lineMeta } from './railLines.js';
-import { disruptionOverride } from '../data/test-overrides.js';
+import { demoDisruptionFixture } from '../data/test-overrides.js';
 
-let warnedAboutOverride = false;
+let warnedAboutDemoMode = false;
 
-function normaliseSegment(raw) {
+/* ------------------------------------------------------------------ *
+ * Demo toggle (DEMO_MODE=1) - a runtime, in-memory switch flipped via
+ * POST /api/system/demo-disruption, not a file you hand-edit and restart
+ * the server for. Gated twice: the toggle is never sent to the browser
+ * unless config.demoMode is on (see routes/system.js), and the setter below
+ * refuses to do anything even if called directly when it's off.
+ * ------------------------------------------------------------------ */
+
+let demoDisruptionActive = false;
+
+export function isDemoModeAvailable() {
+  return config.demoMode;
+}
+
+export function getDemoDisruptionActive() {
+  return config.demoMode && demoDisruptionActive;
+}
+
+/** @returns {boolean} the resulting state (always false when DEMO_MODE isn't set). */
+export function setDemoDisruptionActive(enabled) {
+  if (!config.demoMode) return false;
+  demoDisruptionActive = Boolean(enabled);
+  if (demoDisruptionActive && !warnedAboutDemoMode) {
+    warnedAboutDemoMode = true;
+    console.warn(
+      '[disruptions] DEMO MODE ACTIVE - using the fake NEL alert in server/data/test-overrides.js '
+      + 'instead of live LTA data until the demo toggle is switched off.',
+    );
+  }
+  return demoDisruptionActive;
+}
+
+/** A comma-separated station-code field, or the literal "island wide" free-transport phrase. */
+function parseStationField(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return { stations: [], islandWide: false };
+  if (/island\s*wide/i.test(text)) return { stations: [], islandWide: true };
+  const stations = text.split(',').map((code) => code.trim().toUpperCase()).filter(isStationCode);
+  return { stations, islandWide: false };
+}
+
+/** Exported for direct unit testing (see server/tests/disruptions.test.js) - pure, no network/demo-mode involved. */
+export function normaliseSegment(raw) {
   const line = String(raw?.Line || '').toUpperCase() || null;
   const stations = String(raw?.Stations || '')
     .split(',')
     .map((code) => code.trim().toUpperCase())
     .filter(isStationCode);
+  const freeBus = parseStationField(raw?.FreePublicBus);
+  const shuttle = parseStationField(raw?.FreeMRTShuttle);
   return {
     line,
     lineName: line ? lineMeta(line)?.name || line : null,
     direction: raw?.Direction || null,
     stations,
-    freeShuttle: Boolean(raw?.FreeMRTShuttle === 'Yes' || raw?.FreePublicBus === 'Yes'),
+    freeBusStations: freeBus.stations,
+    freeBusIslandWide: freeBus.islandWide,
+    shuttleStations: shuttle.stations,
+    shuttleIslandWide: shuttle.islandWide,
+    shuttleDirection: String(raw?.MRTShuttleDirection || '').trim() || null,
   };
 }
 
@@ -29,9 +79,19 @@ function buildDisruption(rawSegments, messages, fetchedAt, simulated) {
   const segments = (rawSegments || []).map(normaliseSegment).filter((segment) => segment.line);
   const stationCodes = new Set();
   const lineCodes = new Set();
+  const freeBusStations = new Set();
+  const shuttleStations = new Set();
+  let freeBusIslandWide = false;
+  let shuttleIslandWide = false;
+  let shuttleDirection = null;
   for (const segment of segments) {
     lineCodes.add(segment.line);
     for (const code of segment.stations) stationCodes.add(code);
+    for (const code of segment.freeBusStations) freeBusStations.add(code);
+    for (const code of segment.shuttleStations) shuttleStations.add(code);
+    if (segment.freeBusIslandWide) freeBusIslandWide = true;
+    if (segment.shuttleIslandWide) shuttleIslandWide = true;
+    if (segment.shuttleDirection && !shuttleDirection) shuttleDirection = segment.shuttleDirection;
   }
   return {
     active: segments.length > 0,
@@ -39,6 +99,11 @@ function buildDisruption(rawSegments, messages, fetchedAt, simulated) {
     segments,
     stationCodes,
     lineCodes,
+    freeBusStations,
+    freeBusIslandWide,
+    shuttleStations,
+    shuttleIslandWide,
+    shuttleDirection,
     messages: messages || [],
     simulated,
   };
@@ -51,28 +116,49 @@ function buildDisruption(rawSegments, messages, fetchedAt, simulated) {
  *   segments: ReturnType<typeof normaliseSegment>[],
  *   stationCodes: Set<string>,
  *   lineCodes: Set<string>,
+ *   freeBusStations: Set<string>,
+ *   freeBusIslandWide: boolean,
+ *   shuttleStations: Set<string>,
+ *   shuttleIslandWide: boolean,
+ *   shuttleDirection: string|null,
  *   messages: { content: string, createdDate: string }[],
  *   simulated: boolean,
  * }>}
  */
 export async function getServiceDisruption() {
-  // DEV/TEST hook - see server/data/test-overrides.js. Takes over the whole
-  // disruption pipeline (rerouting, ranking, UI flags) so a hardcoded alert
-  // can be exercised without waiting for a real one.
-  if (disruptionOverride?.active) {
-    if (!warnedAboutOverride) {
-      warnedAboutOverride = true;
-      console.warn(
-        '[disruptions] TEST OVERRIDE ACTIVE - using the fake alert in server/data/test-overrides.js '
-        + 'instead of live LTA data. Set active:false there when done testing.',
-      );
-    }
-    return buildDisruption(disruptionOverride.segments, disruptionOverride.messages, new Date().toISOString(), true);
+  if (getDemoDisruptionActive()) {
+    return buildDisruption(demoDisruptionFixture.segments, demoDisruptionFixture.messages, new Date().toISOString(), true);
   }
 
   const alerts = await getTrainServiceAlerts().catch(() => null);
   const rawSegments = alerts?.status === 2 ? (alerts.affectedSegments || []) : [];
   return buildDisruption(rawSegments, alerts?.messages, alerts?.fetchedAt || new Date().toISOString(), false);
+}
+
+/**
+ * Raw-shaped (status/affectedSegments/messages, matching LTA's own
+ * /TrainServiceAlerts response) for the alerts banner - same demo-mode
+ * substitution as getServiceDisruption above, so the banner and the journey
+ * planner never disagree about whether a disruption is "on".
+ */
+export async function getTrainServiceAlertsForDisplay() {
+  if (getDemoDisruptionActive()) {
+    return {
+      fetchedAt: new Date().toISOString(),
+      status: 2,
+      affectedSegments: demoDisruptionFixture.segments,
+      messages: demoDisruptionFixture.messages,
+      simulated: true,
+    };
+  }
+  const alerts = await getTrainServiceAlerts().catch(() => null);
+  return {
+    fetchedAt: alerts?.fetchedAt || new Date().toISOString(),
+    status: alerts?.status ?? null,
+    affectedSegments: alerts?.affectedSegments || [],
+    messages: alerts?.messages || [],
+    simulated: false,
+  };
 }
 
 /** Human-readable summary for a warning banner / route note. */

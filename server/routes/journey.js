@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { DEFAULT_TOLERANCE, planJourneyRoutes } from '../lib/journeyPlanner.js';
+import { planJourneyWindow } from '../lib/journeyWindow.js';
+import { createRateLimiter } from '../middleware/rateLimit.js';
 
 export const journeyRouter = Router();
 
@@ -115,6 +117,45 @@ export function buildPlanInput(source = {}) {
 journeyRouter.post('/plan', async (req, res, next) => {
   try {
     const result = await planJourneyRoutes(buildPlanInput(req.body || {}));
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+const windowRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 12,
+  message: 'Too many "Today" checks in a short period. Please wait a moment.',
+});
+
+/**
+ * POST /api/journey/window - advice for a saved usual trip.
+ *   { origin, destination, usualDepartAt (ISO), flexibilityMinutes (0-60), avoidWeather? }
+ * Plans the recommended route at up to 5 departure times (15-minute steps)
+ * across the flexible window; see `server/lib/journeyWindow.js`.
+ */
+journeyRouter.post('/window', windowRateLimit, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const origin = pointFromObject(body.origin);
+    const destination = pointFromObject(body.destination);
+    const usualDepartAt = new Date(body.usualDepartAt);
+    if (!origin || !destination || Number.isNaN(usualDepartAt.getTime())) {
+      const error = new Error(
+        'Send {"origin":{latitude,longitude},"destination":{...},"usualDepartAt":"<ISO time>","flexibilityMinutes":0-60}.',
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+    const result = await planJourneyWindow({
+      origin,
+      destination,
+      usualDepartAt,
+      flexibilityMinutes: body.flexibilityMinutes,
+      tolerance: readTolerance(body.tolerance ?? body.tolerancePercent),
+      avoidWeather: readBoolean(body.avoidWeather),
+    });
     return res.json(result);
   } catch (error) {
     return next(error);

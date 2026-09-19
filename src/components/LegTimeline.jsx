@@ -4,9 +4,11 @@ import {
   formatClock,
   formatDistance,
   formatMinutes,
+  formatMinutesRange,
   legLabel,
 } from '../lib/format.js';
 import { LEG_COLOURS, lineSwatchColour, toneForBand } from '../lib/constants.js';
+import { useFreshness } from '../lib/freshness.js';
 import { ArrivalPill, LoadBadge } from './LoadBadge.jsx';
 
 const LEG_ICONS = {
@@ -59,15 +61,18 @@ function BusDetails({ leg }) {
   const boarding = load.boarding;
   const upcoming = load.upcoming || [];
   const service = load.service;
+  const { stale, asOfClock } = useFreshness();
   return (
     <div className="leg-detail">
       {boarding && (
         <div className="leg-detail__row">
           <span className="leg-detail__key">Boarding</span>
           <span className="leg-detail__value">
-            {boarding.monitored
-              ? `Arriving in ${formatArrivalMinutes(boarding.minutesUntil)}`
-              : 'Scheduled only - not tracked live'}
+            {stale && boarding.estimatedArrival
+              ? `Was due at ${formatClock(boarding.estimatedArrival)} (as of ${asOfClock}, not live)`
+              : boarding.monitored
+                ? `Arriving in ${formatArrivalMinutes(boarding.minutesUntil)}`
+                : 'Scheduled only - not tracked live'}
             {boarding.busTypeLabel && ` · ${boarding.busTypeLabel}`}
             {boarding.approximateCapacity ? ` (~${boarding.approximateCapacity} passengers)` : ''}
           </span>
@@ -178,7 +183,8 @@ export function LegRow({ leg, expanded, onHover }) {
           </span>
           <span className="leg-row__times">
             <span>{formatClock(leg.departure)} – {formatClock(leg.arrival)}</span>
-            <em>{formatMinutes(leg.durationMinutes)}</em>
+            <em>{formatMinutesRange(leg.durationRange, leg.durationMinutes)}</em>
+            {leg.durationRange && <span className="leg-row__est">est.</span>}
           </span>
           {isRide
             ? <LoadBadge band={leg.load?.band} size="sm" />
@@ -195,6 +201,13 @@ export function LegRow({ leg, expanded, onHover }) {
             {leg.type === 'mrt' && <RailDetails leg={leg} />}
             {leg.type === 'walk' && <WalkDetails leg={leg} />}
             {leg.type === 'other' && <p className="leg-detail__note">{leg.routeLabel || 'Other transport'}</p>}
+            {leg.durationRange && (
+              <p className="leg-detail__note">
+                <strong>Estimate: {formatMinutesRange(leg.durationRange, leg.durationMinutes)}</strong>
+                {` (typical ${formatMinutes(leg.durationRange.typicalMinutes)}). `}
+                {leg.durationRange.basis}
+              </p>
+            )}
           </div>
         )}
       </div>

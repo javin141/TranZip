@@ -6,6 +6,8 @@
  * context for the API layer to translate into an actionable HTTP response.
  */
 
+import { spendUpstreamCall } from './callBudget.js';
+
 export class UpstreamError extends Error {
   constructor(message, { service, status, url, body, kind = 'upstream' } = {}) {
     super(message);
@@ -47,6 +49,8 @@ export async function requestJson(url, {
   let attempt = 0;
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Every attempt (retries included) is a real upstream request.
+    spendUpstreamCall();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response;

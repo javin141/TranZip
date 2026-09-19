@@ -23,6 +23,7 @@ import { computeGoogleTransitRoutes, hasGoogleRoutesKey } from './googleRoutesCl
 import { planJourneysLocally, PLANNER_NAME } from './localPlanner.js';
 import { getServiceDisruption, disruptionSummary, disruptionNoteForLine } from './disruptions.js';
 import { getWeatherNear } from './weatherClient.js';
+import { applyDurationRange } from './durationRange.js';
 import { decodePolyline } from './polyline.js';
 import {
   LOAD_BANDS,
@@ -36,7 +37,7 @@ import {
 } from './loadModel.js';
 import { isStationCode, lineForStationCode, lineMeta } from './railLines.js';
 import { knownStationName, stationDetails } from './stationCatalog.js';
-import { formatStopName, stationLabel } from './format.js';
+import { formatStopName, parseTimeMs, stationLabel } from './format.js';
 
 export const DEFAULT_TOLERANCE = 0.1;
 
@@ -61,6 +62,22 @@ function toPoint(stop) {
     longitude: typeof stop.lon === 'number' ? stop.lon : null,
     time: stop.departure || stop.arrival || null,
   };
+}
+
+/**
+ * Keeps the first route for each distinct itinerary signature. Google's
+ * `computeAlternativeRoutes` can return the same journey several times over at
+ * successive departures, which would otherwise show as identical route cards
+ * and make "lowest load within tolerance" a comparison between copies.
+ */
+export function dedupeRoutesBySignature(routes) {
+  const seen = new Set();
+  return routes.filter((route) => {
+    const key = route.signature || route.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Stable signature so identical itineraries from different mode queries collapse. */
@@ -182,7 +199,7 @@ function arrivalSlots(service, nowMs) {
 async function enrichBusLeg(leg, context) {
   const { nowMs } = context;
   const stopCode = leg.from?.code;
-  const boardingTime = leg.departure ? Date.parse(leg.departure) : context.departureMs;
+  const boardingTime = parseTimeMs(leg.departure) ?? context.departureMs;
 
   let arrival = null;
   let arrivalError = null;
@@ -199,8 +216,13 @@ async function enrichBusLeg(leg, context) {
   );
 
   const slots = matchingServices.flatMap((service) => arrivalSlots(service, nowMs));
+  // The bus the passenger can actually catch. Only when leaving soon is it
+  // fine to fall back to the next bus listed; for a departure further out
+  // (crowd forecast territory) that bus is a different vehicle at a
+  // different time, so reporting its load would be misleading - LTA has no
+  // bus-load forecast - and the leg is left as "no live data" instead.
   const chosen = slots.find((slot) => Number.isFinite(slot.arrivalMs) && slot.arrivalMs >= boardingTime - 60000)
-    || slots[0]
+    || (context.useForecast ? null : slots[0])
     || null;
 
   const [serviceInfo, destinationStop] = await Promise.all([
@@ -363,29 +385,83 @@ function legStationCodes(leg) {
 }
 
 /**
- * Flags any rail leg that still has to pass through a station named in a live
- * `/TrainServiceAlerts` segment. The pathfinder already tries to route around
- * an active disruption (see `disruption.stationCodes` passed to the local
- * planner), so a flagged leg here means no rail alternative existed - the
- * leg is real and the flag is what lets the UI and the recommendation rule
- * warn about it instead of silently riding through the fault.
+ * Flags any rail leg that passes through a station named in a live
+ * `/TrainServiceAlerts` segment with `affected: true`. The pathfinder tries
+ * to route around an active disruption for the routes it builds itself (see
+ * `disruption.stationCodes` passed to the local planner), so a flagged leg
+ * on one of *those* means no rail alternative existed. But this also runs
+ * on `baselineRoute` (deliberately planned *without* avoiding the
+ * disruption, to show what the "usual" route looks like) and on routes from
+ * sources that don't know about LTA disruptions at all (Google/OneMap) -
+ * for those, a flagged leg just means the disruption sits on that route, not
+ * that TranZip failed to route around it.
  */
 function applyDisruption(route, disruption) {
   if (!disruption?.active) {
     route.disrupted = false;
+    route.disruptionSimulated = false;
     return route;
   }
   let disrupted = false;
   for (const leg of route.legs) {
     if (leg.type !== 'mrt') continue;
     const hit = legStationCodes(leg).some((code) => disruption.stationCodes.has(code));
-    leg.disrupted = hit;
+    leg.affected = hit;
     if (hit) {
       disrupted = true;
-      leg.disruptionNote = disruptionNoteForLine(disruption, leg.line);
+      leg.affectedNote = disruptionNoteForLine(disruption, leg.line);
     }
   }
   route.disrupted = disrupted;
+  // Only meaningful alongside `disrupted`/`rerouted`, but set unconditionally
+  // so the UI can show "[SIMULATED]" on any route touched by the demo
+  // toggle, not just ones the pathfinder couldn't route around.
+  route.disruptionSimulated = disruption.simulated;
+  return route;
+}
+
+/** Every MRT/LRT stop (code + resolved name) a route actually passes through. */
+function routeRailStops(route) {
+  const stops = [];
+  for (const leg of route.legs) {
+    if (leg.type !== 'mrt') continue;
+    for (const stop of [leg.from, ...(leg.intermediateStops || []), leg.to]) {
+      if (stop?.code) stops.push(stop);
+    }
+  }
+  return stops;
+}
+
+/**
+ * One-line note when a route passes through a station where LTA is running a
+ * free bus or free MRT shuttle to bridge a live disruption - reuses each
+ * stop's already-resolved name (from the routing source), so no extra
+ * lookup is needed.
+ */
+function applyFreeTransfer(route, disruption) {
+  if (!disruption?.active) {
+    route.freeTransferNote = null;
+    return route;
+  }
+  const prefix = disruption.simulated ? '[SIMULATED] ' : '';
+  const stops = routeRailStops(route);
+
+  const busStop = stops.find((stop) => disruption.freeBusStations.has(stop.code));
+  if (busStop) {
+    route.freeTransferNote = `${prefix}Free bus available at ${busStop.name || busStop.code}`;
+    return route;
+  }
+  const shuttleStop = stops.find((stop) => disruption.shuttleStations.has(stop.code));
+  if (shuttleStop) {
+    const direction = disruption.shuttleDirection ? ` (${disruption.shuttleDirection})` : '';
+    route.freeTransferNote = `${prefix}Free MRT shuttle at ${shuttleStop.name || shuttleStop.code}${direction}`;
+    return route;
+  }
+  if (disruption.freeBusIslandWide && (route.disrupted || stops.some((stop) => disruption.stationCodes.has(stop.code)))) {
+    route.freeTransferNote = `${prefix}Free bus service available island-wide during this disruption`;
+    return route;
+  }
+  route.freeTransferNote = null;
   return route;
 }
 
@@ -451,6 +527,8 @@ async function enrichRoute(route, context) {
         ? `${worstLeg?.load?.band?.label || 'Unknown'} on ${worstLeg?.type === 'bus' ? `bus ${worstLeg.serviceNo}` : `${lineMeta(worstLeg?.line)?.short || ''} rail`}.`
         : `Overall ${scoreToBand(score).label.toLowerCase()} across ${knownLegs.length} vehicle${knownLegs.length === 1 ? '' : 's'}.`,
   };
+
+  applyDurationRange(route, context);
 
   return route;
 }
@@ -570,7 +648,7 @@ export function rankRoutes(routes, { tolerance = DEFAULT_TOLERANCE, weatherActiv
       : 0;
     if (route.disrupted && hasCleanRoute) {
       const lines = [...new Set(
-        route.legs.filter((leg) => leg.disrupted).map((leg) => lineMeta(leg.line)?.short || leg.line),
+        route.legs.filter((leg) => leg.affected).map((leg) => lineMeta(leg.line)?.short || leg.line),
       )];
       route.recommendationReason = `Avoided - affected by a live service alert on ${lines.join(', ') || 'the rail network'}.`;
     } else if (!orderedCandidates.includes(route)) {
@@ -649,14 +727,20 @@ export async function planJourneyRoutes({
   /** @type {any} */
   let analyzedLocal = null;
 
-  const disruption = await getServiceDisruption().catch(() => ({
-    active: false, segments: [], stationCodes: new Set(), lineCodes: new Set(), messages: [],
-  }));
+  // Weather is read every time (cached, no key needed) because the travel-time
+  // ranges widen walking legs when it's raining; `avoidWeather` only decides
+  // whether it also biases ranking.
+  const [disruption, weatherReading] = await Promise.all([
+    getServiceDisruption().catch(() => ({
+      active: false, segments: [], stationCodes: new Set(), lineCodes: new Set(), messages: [],
+    })),
+    getWeatherNear(origin).catch(() => null),
+  ]);
   if (disruption.active) {
     warnings.push({ mode: 'warning', message: disruptionSummary(disruption) });
   }
 
-  const weather = avoidWeather ? await getWeatherNear(origin).catch(() => null) : null;
+  const weather = avoidWeather ? weatherReading : null;
   const weatherActive = Boolean(weather && (weather.isRaining || weather.isHot));
   if (avoidWeather && weatherActive) {
     const conditionText = weather.isRaining
@@ -666,6 +750,18 @@ export async function planJourneyRoutes({
     warnings.push({ mode: 'weather', message: `${prefix}${conditionText}. Routes were weighted toward less time on foot.` });
   }
 
+  const context = {
+    nowMs,
+    departureMs: dateTime.getTime(),
+    // Plans more than 15 minutes ahead use the 30-minute crowd forecast;
+    // sooner departures use LTA's live 10-minute crowd reading.
+    useForecast: dateTime.getTime() - nowMs > 15 * 60 * 1000,
+    includeServiceInfo,
+    includeStationInfo,
+    raining: Boolean(weatherReading?.isRaining),
+    rainSimulated: Boolean(weatherReading?.simulated),
+  };
+
   /** @type {any[]} */
   let summarized = [];
 
@@ -674,7 +770,7 @@ export async function planJourneyRoutes({
     try {
       const googleRoutes = await computeGoogleTransitRoutes({ origin, destination, dateTime, modes: queryModes });
       if (googleRoutes.length > 0) {
-        summarized = googleRoutes.slice(0, maxRoutes);
+        summarized = dedupeRoutesBySignature(googleRoutes).slice(0, maxRoutes);
         routingSource = 'google';
       } else if (planner === 'google') {
         warnings.push({ mode: 'google', message: 'Google routing was requested but returned no itineraries.' });
@@ -783,8 +879,32 @@ export async function planJourneyRoutes({
 
   summarized.forEach((route) => {
     applyDisruption(route, disruption);
+    applyFreeTransfer(route, disruption);
     applyWeather(route, weatherActive ? { active: true, condition: weather.condition } : null);
   });
+
+  // When a disruption is active, also plan the "usual" route - the fastest
+  // one WITHOUT avoiding the disruption - so the UI can draw it against the
+  // actual recommendation and show exactly how much the disruption costs.
+  // This intentionally always goes through the local LTA-native planner
+  // (never Google/OneMap, which don't know the disruption exists in the
+  // first place) so it's a like-for-like "what the topology normally gives
+  // you" comparison regardless of which source served the routes above.
+  let baselineRoute = null;
+  if (disruption.active) {
+    const baseline = await planJourneysLocally({
+      origin, destination, dateTime, modes: queryModes, maxRoutes: 1, avoidStations: null,
+    }).catch(() => null);
+    if (baseline?.routes?.[0]) {
+      [baselineRoute] = baseline.routes;
+      baselineRoute.source = 'lta';
+      baselineRoute.planner = PLANNER_NAME;
+      baselineRoute.isBaseline = true;
+      applyDisruption(baselineRoute, disruption);
+      applyFreeTransfer(baselineRoute, disruption);
+      await enrichRoute(baselineRoute, context).catch(() => null);
+    }
+  }
 
   if (summarized.length === 0) {
     return {
@@ -799,24 +919,20 @@ export async function planJourneyRoutes({
       recommendation: null,
       warnings: warnings.length > 0 ? warnings : [{ mode: 'info', message: 'No routes found for this trip.' }],
       routes: [],
-      disruption: { active: disruption.active, lines: [...disruption.lineCodes] },
+      baselineRoute,
+      disruption: { active: disruption.active, lines: [...disruption.lineCodes], simulated: Boolean(disruption.simulated) },
       weather: weather ? { active: weatherActive, condition: weather.condition, temperatureC: weather.temperatureC, rainfallMm: weather.rainfallMm } : { active: false },
     };
   }
 
-  const context = {
-    nowMs,
-    departureMs: dateTime.getTime(),
-    // Plans more than 15 minutes ahead use the 30-minute crowd forecast;
-    // sooner departures use LTA's live 10-minute crowd reading.
-    useForecast: dateTime.getTime() - nowMs > 15 * 60 * 1000,
-    includeServiceInfo,
-    includeStationInfo,
-  };
-
   await Promise.all(summarized.map((route) => enrichRoute(route, context)));
 
   const { routes, recommendation } = rankRoutes(summarized, { tolerance, weatherActive });
+
+  if (baselineRoute && recommendation) {
+    recommendation.baselineMinutes = baselineRoute.durationMinutes;
+    recommendation.deltaMinutes = recommendation.recommendedMinutes - baselineRoute.durationMinutes;
+  }
 
   const plannerLabel = {
     google: 'Google Maps Transit Route API',
@@ -838,10 +954,12 @@ export async function planJourneyRoutes({
     recommendation,
     warnings,
     routes,
+    baselineRoute,
     disruption: {
       active: disruption.active,
       lines: [...disruption.lineCodes],
       stations: [...disruption.stationCodes],
+      simulated: Boolean(disruption.simulated),
     },
     weather: weather
       ? {
