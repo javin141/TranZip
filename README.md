@@ -16,6 +16,14 @@
 - **A "Today" card for your usual trip.** Save your regular commute once (stored only in your browser) and the app opens with one line about it: fine as usual, leave later for a quieter ride, or a disruption to route around. See [Today card](#today-card-my-usual-trip). There is no background push — it only works while the app is open.
 - **Three routing sources, one fallback chain.** Google Maps Routes API (optional) → OneMap's routing service → an LTA DataMall-native local planner (bus routes + rail topology) that TranZip builds and ranks itself. If a source is unavailable or unconfigured, the app falls through to the next one automatically — it works end-to-end on just an LTA key and an OneMap token.
 
+## Future Roadmap
+
+- **Sheltered Walkway Routing:** Provide multiple sheltered walking options showing the coverage vs distance trade-off (e.g., *5 min walk with 75% shelter* vs *8 min walk with 90% shelter*).
+- **Accessibility & Step-Free Routing:** Routing prioritizing lifts, step-free paths, and avoiding steep hills or stations with out-of-service elevators.
+- **Train Carriage Crowd Density:** Recommend the least crowded train carriage and boarding door for a higher chance of getting a seat by using sensors to be installed in train carriages.
+- **Proactive Disruption Alerts:** Send a heads-up notification before you leave home if your saved daily route has an active train breakdown.
+- **Shared Bike & PCN Alternatives:** Suggest shared bikes (e.g., Anywheel) or park connectors for the last mile when feeder buses are packed or delayed.
+
 ## Prerequisites
 
 - **Node.js 22 or later** (`node --version` to check; the test runner's file globs need it). No database, no external services to install.
